@@ -217,6 +217,7 @@
   .due-now-card{ background:var(--duenow-card-bg); color:var(--text); border-radius:10px; padding:12px 14px; display:flex; flex-direction:column; gap:7px; }
   .due-now-card-meta{ font-size:11px; font-weight:700; color:var(--text-faint); text-transform:uppercase; letter-spacing:.03em; display:flex; align-items:center; gap:6px; }
   .due-now-card-tag{ background:var(--duenow-tag-bg); color:var(--duenow-tag-text); border-radius:5px; padding:1px 6px; font-size:10.5px; font-weight:800; letter-spacing:.04em; }
+  .due-now-card-tag.overdue{ background:var(--alert-bg); color:var(--alert-text); }
   .due-now-card-title{ font-size:15px; font-weight:800; color:var(--text); }
   .due-now-card-line{ font-size:13px; color:var(--text-muted); display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
   .due-now-check{ font-size:13.5px; font-weight:800; }
@@ -8614,8 +8615,53 @@ function dueNowCandidates(){
   }
 
   const visible = cands.filter(c=>!c.done || (state.dueNowRecentlyCompleted[c.key] && now - state.dueNowRecentlyCompleted[c.key] < DUE_NOW_RECENT_MS));
-  visible.sort((a,b)=>(a.sortTime||"99:99").localeCompare(b.sortTime||"99:99"));
-  return visible.slice(0, DUE_NOW_MAX);
+  return dueNowApplyHourWindow(visible);
+}
+
+// Batch L item 118 — Due Now shows only the CURRENT CLOCK HOUR (Johnna, Oct 12: "the Due Now should only have
+// tasks due within that hour"). At 2:35 PM that is 2:00 to 2:59 PM. Anything due in a LATER hour is left out (it
+// still shows in Today's Flow below); anything due in an EARLIER hour that nobody has done yet stays at the top,
+// tagged OVERDUE, until it is done or logged as missed (also Johnna). Items with no clock time are left out of
+// Due Now (they stay in Today's Flow). The current hour's items are never pushed out by overdue ones: overdue
+// fills only the slots left under DUE_NOW_MAX, and state.dueNowHidden counts any overdue items that did not fit.
+function dueNowMinutes(t){
+  const m = /^(\d{1,2}):(\d{2})$/.exec(String(t||""));
+  if(!m) return null;
+  const h = +m[1], mi = +m[2];
+  return (h>23 || mi>59) ? null : h*60+mi;
+}
+function dueNowHourStartMin(){
+  const d = nowRef();
+  return d.getHours()*60;
+}
+function dueNowApplyHourWindow(list){
+  const start = dueNowHourStartMin(), end = start + 60;
+  const overdue = [], current = [];
+  list.forEach(c=>{
+    const t = dueNowMinutes(c.sortTime);
+    if(t===null) return;
+    if(t < start) overdue.push(Object.assign(c, { overdue:true }));
+    else if(t < end) current.push(Object.assign(c, { overdue:false }));
+  });
+  const byTime = (a,b)=>(a.sortTime||"").localeCompare(b.sortTime||"");
+  overdue.sort(byTime); current.sort(byTime);
+  const curShown = current.slice(0, DUE_NOW_MAX);
+  const room = Math.max(0, DUE_NOW_MAX - curShown.length);
+  const overdueShown = overdue.slice(0, room);
+  state.dueNowHidden = overdue.length - overdueShown.length;
+  return overdueShown.concat(curShown);
+}
+// Re-draw the Dashboard when the clock passes the top of an hour (or a card becomes overdue) so Due Now moves on
+// without anyone touching the screen.
+let dueNowHourKey = null;
+let dueNowHourTimer = null;
+function dueNowHourWatch(){
+  const key = TODAY_ISO + "@" + nowRef().getHours();
+  if(dueNowHourKey !== null && key !== dueNowHourKey && state.userId && state.view==="dashboard") scheduleRender();
+  dueNowHourKey = key;
+}
+if(typeof setInterval === "function" && !dueNowHourTimer){
+  dueNowHourTimer = setInterval(dueNowHourWatch, 30000);
 }
 
 function dueNowGoToPage(delta){
@@ -8629,7 +8675,7 @@ function renderDueNowCard(c){
   if(c.cardType==="med"){
     const timeLabel = c.time ? formatTime12(c.time) : "";
     return `<div class="due-now-card ${c.done?'done':''}">
-      <div class="due-now-card-meta">${timeLabel ? `${timeLabel} · ` : ""}<span class="due-now-card-tag">MEDS</span></div>
+      <div class="due-now-card-meta">${timeLabel ? `${timeLabel} · ` : ""}<span class="due-now-card-tag">MEDS</span>${c.overdue && !c.done ? ` <span class="due-now-card-tag overdue">OVERDUE</span>` : ""}</div>
       <div class="due-now-card-title">${esc(c.label)}</div>
       ${c.members.map(m=>{
         if(m.allDone){
@@ -8648,7 +8694,7 @@ function renderDueNowCard(c){
   }
   if(c.cardType==="shower"){
     return `<div class="due-now-card ${c.done?'done':''}">
-      <div class="due-now-card-meta"><span class="due-now-card-tag">SHOWER</span></div>
+      <div class="due-now-card-meta"><span class="due-now-card-tag">SHOWER</span>${c.overdue && !c.done ? ` <span class="due-now-card-tag overdue">OVERDUE</span>` : ""}</div>
       <div class="due-now-card-title">${esc(c.who)}</div>
       <div class="due-now-card-line">${esc(c.detail||"")}</div>
       ${c.done
@@ -8672,7 +8718,7 @@ function renderDueNowCard(c){
   }
   const expanded = state.expandedRoutineId === (item.id+'@'+occTime);
   return `<div class="due-now-card ${c.done?'done':''}">
-    <div class="due-now-card-meta">${formatTime12(occTime)} · <span class="due-now-card-tag">${tag}</span></div>
+    <div class="due-now-card-meta">${formatTime12(occTime)} · <span class="due-now-card-tag">${tag}</span>${c.overdue && !c.done ? ` <span class="due-now-card-tag overdue">OVERDUE</span>` : ""}</div>
     <div class="due-now-card-title">${esc(r.name)}</div>
     <div class="due-now-card-line">${esc(routineTypeLabel(item))}${item.detail?` — ${esc(item.detail)}`:""}</div>
     ${c.done
@@ -8687,6 +8733,8 @@ function renderDueNowCard(c){
 function renderDueNowBanner(){
   const all = dueNowCandidates();
   if(!all.length) return "";
+  const overdueCount = all.filter(c=>c.overdue && !c.done).length;
+  const hiddenCount = state.dueNowHidden || 0;
   const pages = Math.max(1, Math.ceil(all.length / DUE_NOW_PAGE_SIZE));
   if(state.dueNowPage >= pages) state.dueNowPage = 0;
   const pageItems = all.slice(state.dueNowPage*DUE_NOW_PAGE_SIZE, state.dueNowPage*DUE_NOW_PAGE_SIZE + DUE_NOW_PAGE_SIZE);
@@ -8695,9 +8743,10 @@ function renderDueNowBanner(){
   <div class="due-now-banner">
     <div class="due-now-head">
       <span class="due-now-pill"><span class="due-now-dot"></span> Due Now</span>
-      <span class="due-now-count">${doneCount} of ${all.length} done</span>
+      <span class="due-now-count">${doneCount} of ${all.length} done${overdueCount ? ` · ${overdueCount} overdue` : ""}</span>
     </div>
     <div class="due-now-cards">${pageItems.map(renderDueNowCard).join("")}</div>
+    ${hiddenCount ? `<div class="due-now-count" style="margin-top:8px;">+${hiddenCount} more earlier item${hiddenCount===1?"":"s"} not done yet are listed in Today's Flow below.</div>` : ""}
     ${pages>1 ? `<div class="due-now-nav">
       <button type="button" class="btn small due-now-toggle" onclick="dueNowGoToPage(-1)">‹ Prev</button>
       <span class="due-now-dots">${Array.from({length:pages}).map((_,i)=>`<span class="dot-ind ${i===state.dueNowPage?'active':''}"></span>`).join("")}</span>
