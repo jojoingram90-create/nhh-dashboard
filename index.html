@@ -1714,17 +1714,12 @@ function totalPendingCount(){
   n += pendingResidentArchives(rf).length;
   n += pendingSupplies(rf).length;
   n += pendingCalendarEvents(hf).length;
-  n += pendingIncidentManagerReviews(rf).length;
   return n;
 }
 // Dedicated "alert system on the navigation bar" for Incident Reports specifically (in addition to
 // counting toward the general Pending Approvals badge above) — same all-houses-for-Leadership /
 // house-scoped-for-everyone-else split as totalPendingCount().
-function pendingIncidentManagerReviewCount(){
-  const allHouses = isSystemAdmin();
-  const rf = allHouses ? (()=>true) : (r=>r.house===state.house);
-  return pendingIncidentManagerReviews(rf).length;
-}
+function pendingIncidentManagerReviewCount(){ return incidentWaitingForMe().total; } // item 128: what is waiting on the signed-in person
 
 // Shower Schedule is derived entirely from each resident's Care Plan "hygiene" section — see
 // syncShowerScheduleFromHygiene(). Choosing "Bed baths only" there clears a resident's row here;
@@ -4002,6 +3997,8 @@ function irSignSupervisor(reportId){
   rep.statements.supervisorName = currentUser().name;
   rep.statements.supervisorSigned = true;
   rep.statements.supervisorSignedAt = `${TODAY_SHORT} · Just now`;
+  rep.statements.supervisorSignedById = currentUser().id; // the other leaders are alerted to acknowledge (item 128)
+  rep.statements.ack = [];
   rep.status = "reviewed";
   irTouchSection(rep, "statements");
   scheduleRender();
@@ -4093,33 +4090,161 @@ function pendingIncidentManagerReviews(residentFilterFn){
   return out;
 }
 function pendingIncidentManagerReviewsForHouse(){ return pendingIncidentManagerReviews(r=>r.house===state.house); }
-// Gated the same as every other Pending Approvals item — moduleEdit('incidents') (Manager or Leadership)
-// — though in practice it's the house manager who acts here: Leadership's Pending Approvals view is the
-// company-wide history list (renderApprovalsHistoryForLeadership), not an actionable queue, same as every
-// other approval type in this app.
-function approveIncidentManagerReview(residentId, reportId){
+// ---- Item 128 (Johnna, Oct 14): incident reports are NOT in Pending Approvals any more. The whole sign-off chain happens
+// on the report itself: staff Submit for Review -> the house manager corrects anything needed and signs off (Section 9) ->
+// Leadership edits if needed and either signs or sends it back for correction -> when a leader signs, the OTHER leaders get an
+// acknowledgement alert. Sign-off and acknowledgements live in the report's existing `statements` json (no schema change):
+// statements.supervisorSignedById (who signed), statements.ack = [{id,name,at}] (who has acknowledged), statements.sendBack.
+function irSignManager(reportId){
   if(!moduleEdit('incidents')) return;
-  const rep = getIR(residentId, reportId);
+  syncIRFormToState(reportId);
+  const rep = findIRById(reportId);
   if(!rep || rep.status !== "pending_manager_review") return;
   const who = currentUser();
-  rep.statements.managerReview.status = "approved";
-  rep.statements.managerReview.decidedBy = who.name;
-  rep.statements.managerReview.decidedById = who.id;
-  rep.statements.managerReview.decidedAt = "Just now";
+  const mr = rep.statements.managerReview;
+  mr.status = "approved";
+  mr.decidedBy = who.name;
+  mr.decidedById = who.id;
+  mr.decidedAt = `${TODAY_SHORT} · Just now`;
   rep.status = "pending_leadership_review";
+  irTouchSection(rep, "statements");
   scheduleRender();
 }
-function denyIncidentManagerReview(residentId, reportId){
-  if(!moduleEdit('incidents')) return;
-  const rep = getIR(residentId, reportId);
-  if(!rep || rep.status !== "pending_manager_review") return;
+function irOpenSendBack(reportId){ if(!isSystemAdmin()) return; syncIRFormToState(reportId); state.irSendBackOpen = reportId; state.irSendBackError = null; scheduleRender(); }
+function irCancelSendBack(){ state.irSendBackOpen = null; state.irSendBackError = null; scheduleRender(); }
+// Leadership sends a report back to the staff member (any time before it is signed). The reason is required; the manager
+// sign-off starts over when the report is submitted again.
+function irSendBack(reportId){
+  if(!isSystemAdmin()) return;
+  const el = document.getElementById("ir-sendBackReason-"+reportId);
+  const reason = el ? String(el.value||"").trim() : "";
+  syncIRFormToState(reportId);
+  const rep = findIRById(reportId);
+  if(!rep || (rep.status !== "pending_leadership_review" && rep.status !== "pending_manager_review")) return;
+  if(!reason){ state.irSendBackError = reportId; scheduleRender(); return; }
   const who = currentUser();
-  rep.statements.managerReview.status = "denied";
-  rep.statements.managerReview.decidedBy = who.name;
-  rep.statements.managerReview.decidedById = who.id;
-  rep.statements.managerReview.decidedAt = "Just now";
+  rep.statements.sendBack = { by:who.name, byId:who.id, at:`${TODAY_SHORT} · Just now`, reason };
+  rep.statements.managerReview = { status:undefined, submittedBy:"", submittedById:null, submittedAt:"", decidedBy:"", decidedById:null, decidedAt:"" };
   rep.status = "needs_revision";
+  state.irSendBackOpen = null; state.irSendBackError = null;
+  irTouchSection(rep, "statements");
   scheduleRender();
+}
+function irAckedBy(rep, userId){ return ((rep.statements && rep.statements.ack) || []).some(a=>a.id===userId); }
+// Reports another leader has signed that `user` (a Leadership member) has not acknowledged yet. Reports signed before this
+// feature have no supervisorSignedById and never alert.
+function incidentAcksNeeded(user){
+  if(!user || user.role !== "leadership") return [];
+  const out = [];
+  residents.forEach(r=>{
+    (incidentReports[r.id]||[]).forEach(rep=>{
+      const st = rep.statements || {};
+      if(st.supervisorSigned && st.supervisorSignedById && st.supervisorSignedById !== user.id && !irAckedBy(rep, user.id)) out.push({ residentId:r.id, rep });
+    });
+  });
+  return out;
+}
+function irAcknowledge(residentId, reportId){
+  const me = currentUser();
+  if(!me || me.role !== "leadership") return;
+  const rep = getIR(residentId, reportId);
+  if(!rep) return;
+  const st = rep.statements;
+  if(!st.supervisorSigned || !st.supervisorSignedById || st.supervisorSignedById === me.id) return;
+  if(!Array.isArray(st.ack)) st.ack = [];
+  if(!st.ack.some(a=>a.id===me.id)) st.ack.push({ id:me.id, name:me.name, at:`${TODAY_SHORT} · Just now` });
+  scheduleRender();
+}
+// The other leaders who should acknowledge a signed report, as far as this device knows them.
+function irAckExpected(rep){
+  const sid = rep.statements && rep.statements.supervisorSignedById;
+  return STAFF.filter(s=>s.role==="leadership" && s.id !== sid);
+}
+// What is waiting on the signed-in person: a house manager sees reports waiting for the manager sign-off at the house in view;
+// Leadership sees reports waiting for the leadership signature (all houses) plus reports waiting for their acknowledgement.
+function incidentWaitingForMe(){
+  const me = currentUser();
+  const out = { sign:0, ack:0, total:0 };
+  if(!me) return out;
+  if(me.role === "leadership"){
+    residents.forEach(r=>{ (incidentReports[r.id]||[]).forEach(rep=>{ if(rep.status === "pending_leadership_review") out.sign++; }); });
+  } else if(me.role === "manager"){
+    residents.filter(r=>r.house===state.house).forEach(r=>{ (incidentReports[r.id]||[]).forEach(rep=>{ if(rep.status === "pending_manager_review") out.sign++; }); });
+  }
+  out.ack = incidentAcksNeeded(me).length;
+  out.total = out.sign + out.ack;
+  return out;
+}
+function openIncidentFromAlert(residentId, reportId){
+  const r = residents.find(x=>x.id===residentId);
+  if(r && r.house !== state.house) setHouse(r.house);
+  openIncidentReport(residentId, reportId);
+}
+function renderIncidentAckCard(){
+  const list = incidentAcksNeeded(currentUser());
+  if(!list.length) return "";
+  return `<div class="section">
+    <div class="section-head"><h2>Incident reports to acknowledge</h2><span class="hint">Signed by another leader — open the report to read it, then tap Acknowledge</span></div>
+    <div style="display:flex; flex-direction:column; gap:10px;">${list.map(({residentId, rep})=>{
+      const r = residents.find(x=>x.id===residentId);
+      const h = r ? houses.find(x=>x.id===r.house) : null;
+      return `<div class="card" style="padding:14px 18px; display:flex; justify-content:space-between; gap:14px; flex-wrap:wrap; align-items:center;">
+        <div>
+          <div style="font-weight:700; margin-bottom:3px;">${esc(r ? r.name : residentId)}${h ? ` <span style="color:var(--text-faint); font-weight:500;">— ${esc(h.name)}</span>` : ""}</div>
+          <div style="font-size:13.5px; color:var(--text-muted);">${esc(rep.types.length ? rep.types.join(", ") : "Type not specified")}${rep.info.incidentDate ? ` · ${esc(rep.info.incidentDate)}` : ""}</div>
+          <span class="hint" style="margin:0;">Signed by ${esc(rep.statements.supervisorName||"Leadership")} · ${esc(rep.statements.supervisorSignedAt||"")}</span>
+        </div>
+        <div class="routine-quicklog-actions" style="margin-top:0;">
+          <button class="btn small" onclick="openIncidentFromAlert('${residentId}',${jsId(rep.id)})">Open report</button>
+          <button class="btn primary small" onclick="irAcknowledge('${residentId}',${jsId(rep.id)})">✓ Acknowledge</button>
+        </div>
+      </div>`;
+    }).join("")}</div>
+  </div>`;
+}
+
+// Incident reports save only when changed (like residents and medications): what the database is known to hold is kept as a
+// signature, and a report is written only when it differs. A session that did not touch a report cannot overwrite a newer
+// sign-off or acknowledgement made on another device.
+let sbIrSigs = {};
+function sbIrSig(rep){ try{ return JSON.stringify(incidentReportRowForSupabase(rep)); }catch(e){ return null; } }
+function sbRecordIncidentBaselines(houseId){
+  residents.filter(r=>r.house===houseId).forEach(r=>{ (incidentReports[r.id]||[]).forEach(rep=>{ if(typeof rep.id === "string") sbIrSigs[rep.id] = sbIrSig(rep); }); });
+}
+// Checks for new or changed reports every minute so alerts arrive without a reload. A report that has unsaved changes here,
+// or is open on screen, is never replaced.
+const INCIDENT_REFRESH_MS = 60000;
+let incidentRefreshTimer = null, incidentRefreshLoading = false, incidentRefreshAt = 0;
+function incidentReportsMaybeRefresh(force){
+  if(!supabaseSession || !state.userId || incidentRefreshLoading) return;
+  if(!force && incidentRefreshAt && Date.now() - incidentRefreshAt < INCIDENT_REFRESH_MS - 5000) return;
+  const me = currentUser();
+  if(!me) return;
+  const ids = (me.role === "leadership" ? [...SUPABASE_LIVE_HOUSE_IDS] : [state.house]).filter(h=>SUPABASE_LIVE_HOUSE_IDS.has(h));
+  if(!ids.length) return;
+  if(!incidentRefreshTimer && typeof setInterval === "function"){
+    incidentRefreshTimer = setInterval(()=>{ if(state.userId) incidentReportsMaybeRefresh(true); }, INCIDENT_REFRESH_MS);
+  }
+  incidentRefreshLoading = true; incidentRefreshAt = Date.now();
+  Promise.resolve(sbClient.from("incident_reports").select("*").in("house_id", ids).order("created_at")).then(({ data, error })=>{
+    incidentRefreshLoading = false;
+    if(error || !Array.isArray(data)) return;
+    let changed = false;
+    data.forEach(row=>{
+      if(!row || !row.resident_id) return;
+      const list = incidentReports[row.resident_id] || (incidentReports[row.resident_id] = []);
+      const idx = list.findIndex(x=>x.id === row.id);
+      const fresh = incidentReportRowFromSupabase(row);
+      const freshSig = sbIrSig(fresh);
+      if(idx < 0){ list.push(fresh); sbIrSigs[row.id] = freshSig; changed = true; return; }
+      const cur = list[idx];
+      const open = state.view === "incidentdetail" && state.incidentReportId === cur.id;
+      const dirty = sbIrSigs[cur.id] !== undefined && sbIrSig(cur) !== sbIrSigs[cur.id];
+      if(open || dirty) return;
+      if(sbIrSigs[cur.id] !== freshSig){ fresh.seq = cur.seq; list[idx] = fresh; sbIrSigs[cur.id] = freshSig; changed = true; }
+    });
+    if(changed) scheduleRender();
+  }).catch(()=>{ incidentRefreshLoading = false; });
 }
 
 /* ---------------- Food photo quality control (cross-house) ---------------- */
@@ -4383,6 +4508,33 @@ function staffHouseIds(staff){
   }
   return houses.length ? [houses[0].id] : [];
 }
+// Manage Staff house assignment (Johnna, Oct 14, item 129): a house tablet only loads its OWN house into `houses`, so on a
+// tablet the Manage Staff toggles used to offer only that one house. These helpers give Manage Staff the whole company's
+// houses (loaded for any Leadership sign-in) without changing `houses`, which still controls what the tablet itself shows.
+let companyHouses = [];
+function staffHouseOptions(){
+  const out = companyHouses.slice();
+  houses.forEach(h=>{ if(!out.some(x=>x.id===h.id)) out.push(h); });
+  return out;
+}
+function staffAssignedHouseIds(staff){
+  if(!staff) return [];
+  const opts = staffHouseOptions();
+  if(Array.isArray(staff.houses)){
+    const valid = staff.houses.filter(id=>opts.some(h=>h.id===id));
+    if(valid.length) return valid;
+  } else if(staff.house && opts.some(h=>h.id===staff.house)){
+    return [staff.house];
+  }
+  return opts.length ? [opts[0].id] : [];
+}
+async function loadCompanyHouses(){
+  try{
+    const { data, error } = await sbClient.from("houses").select("id, name, address").order("name");
+    if(error || !Array.isArray(data) || !data.length) return;
+    companyHouses = data.map(h=>({ id:h.id, name:h.name, address:h.address||"" }));
+  }catch(e){ console.warn("Loading the house list for Manage Staff failed:", e); }
+}
 /* ============================================================================
    Supabase Phase 2 — Knollview pilot (Sept 2026)
    ----------------------------------------------------------------------------
@@ -4428,7 +4580,7 @@ function staffHouseIds(staff){
 // Oct 14, 2026 — version stamp, changed with every delivered file. The page re-reads index.html in the background and,
 // if a newer stamp has been published, shows a "reload" bar (see checkForNewVersion). A phone, computer or iPad that
 // has had the dashboard open for days otherwise keeps running its old copy, and an old copy can lose newer data.
-const APP_BUILD = "2026-10-14c";
+const APP_BUILD = "2026-10-14e";
 const SUPABASE_URL = "https://wxvbbclbgicemegcvvae.supabase.co";
 const SUPABASE_ANON_KEY = "sb_publishable_JC2rWmQ8WOi6-Dhnd_UAXQ_9291ibar";
 const PIN_LOGIN_URL = SUPABASE_URL + "/functions/v1/pin-login";
@@ -4745,7 +4897,7 @@ async function finishSupabaseSignIn(session, opts){
   // Supabase, so Manage Staff looked empty of the real 24-person roster even though it was fully and
   // correctly in the database the whole time. Leadership-only (matches Manage Staff's own visibility;
   // no need for a Caregiver/Manager/PRN session to pull the company-wide roster into local state).
-  if(profile.role === "leadership"){ await loadAllStaffFromSupabase(); }
+  if(profile.role === "leadership"){ await loadAllStaffFromSupabase(); await loadCompanyHouses(); }
 
   await loadSupabaseHousesInto(houses, opts.remote ? null : opts.houseId);
   if(opts.houseId){
@@ -5836,6 +5988,7 @@ async function loadHouseDataFromSupabase(houseId){
       if(row.status === "pending") residentSectionApplyValue(r.id, sectionKey, row.proposed_value);
     });
   });
+  sbRecordIncidentBaselines(houseId);
   sbRecordBaselines(houseId); // what the database now holds for each resident — later saves write only what differs from this
   syncResidentBirthdayEvents();
   await loadResidentPhotoSignedUrls(residents.filter(r=>r.house===houseId));
@@ -6091,9 +6244,11 @@ async function syncLiveHouseToSupabase(){
         }
         const rReports = (incidentReports[r.id]||[]).filter(rep=>typeof rep.id === "string");
         for(const rep of rReports){
+          const irSig = sbIrSig(rep);
+          if(sbIrSigs[rep.id] === irSig) continue; // unchanged since it was loaded or last saved: write nothing (item 128)
           const { error: irErr } = await sbClient.from("incident_reports")
             .upsert(incidentReportRowForSupabase(rep), { onConflict: "id" });
-          if(irErr) console.error("Supabase incident report sync failed:", irErr);
+          if(irErr) console.error("Supabase incident report sync failed:", irErr); else sbIrSigs[rep.id] = irSig;
         }
       }
     }
@@ -6655,7 +6810,7 @@ function renderAnnouncements(){
 /* ---------------- State ---------------- */
 const state = { house:"boca-bay", userId:null, view:"dashboard", residentId:null, profileTab:"overview", contactsSubTab:"contacts", routineEditing:null, checked:{}, completedBy:{}, photoDate:todayIso(), dcResidentId:null, announceIndex:0, composeOpen:false, expandedRoutineId:null, incidentResidentId:null, incidentReportId:null, menuViewWeek:null, recipeModal:null, mealTimesEditing:false, flowExpandedBuckets:null, flowPlanSig:null, dashboardStatFilter:null, flowBucketShowCompleted:{}, expandedGroups:{}, expandedMealKey:null, expandedMedLogKey:null, medChoosingRefuse:false, medRefuseDraft:{},
   menuEditing:false, mealNoteDeletePending:null, calendarModal:null, calendarDeletePending:false, showDeletedEvents:false,
-  incidentSubmitErrors:{},
+  incidentSubmitErrors:{}, irSendBackOpen:null, irSendBackError:null,
   menuShowFull:false, breakfastPrefsOpen:false, breakfastPrefsResidentId:null, breakfastPlanEditingId:null, breakfastPlanDraft:null, breakfastPlanFormError:null, breakfastPlanDeletePending:null, menuBreakfastExpandedDays:{},
   staffAddOpen:false, staffAddError:null, staffAddBusy:false, staffDraft:null, staffEditingId:null, staffEditError:null, staffEditNotice:null, staffRemovePending:null, staffRemoveBusy:null, staffListNotice:null,
   staffSort:"name-asc",
@@ -6818,7 +6973,6 @@ function approvalsQueueParts(){
   // one house's manager approving another's edit didn't seem right) — narrower than canActMenu, which
   // still governs the resident-scoped meal notes/breakfast plans below unchanged.
   const canActMasterMenu = isSystemAdmin();
-  const canActIncidents = moduleEdit('incidents');
   const pendingDx = pendingDiagnosesList();
   const pendingMeds = pendingCommonMedications();
   const pendingNotes = housePendingMealNotes();
@@ -6831,8 +6985,7 @@ function approvalsQueueParts(){
   const pendingRAR = pendingResidentArchivesForHouse();
   const pendingSup = pendingSuppliesForHouse();
   const pendingCal = pendingCalendarEventsForHouse();
-  const pendingIR = pendingIncidentManagerReviewsForHouse();
-  const nothing = !(pendingDx.length || pendingMeds.length || pendingNotes.length || pendingPlans.length || pendingMenu.length || pendingSections.length || pendingVis.length || pendingVR.length || pendingMPR.length || pendingRAR.length || pendingSup.length || pendingCal.length || pendingIR.length);
+  const nothing = !(pendingDx.length || pendingMeds.length || pendingNotes.length || pendingPlans.length || pendingMenu.length || pendingSections.length || pendingVis.length || pendingVR.length || pendingMPR.length || pendingRAR.length || pendingSup.length || pendingCal.length);
   const readOnlyHint = !(canActMenu || canActResidents || canActSupplies || canActCalendar || canActMasterMenu)
     ? `<span class="hint">You can see what's waiting on a house manager or leadership review here, but approving or denying isn't your call.</span>`
     : `<span class="hint">Special instructions, new medication names, new diagnoses, and the new Batch 9 caregiver-proposed items below that still need a house manager or leadership review.</span>`;
@@ -6878,10 +7031,6 @@ function approvalsQueueParts(){
         return approvalCard(`Supplies Received — ${r ? r.name : s.residentId}`, `${s.item}${s.quantity?" — Qty: "+s.quantity:""}`, s.addedBy, canActSupplies, `approveSupply(${s.id})`, `denySupply(${s.id})`);
       }).join("")}
       ${pendingCal.map(e=>approvalCard(`Calendar event — ${esc(e.t)}`, `${fmtIsoLabel(e.day)}${e.time?" · "+fmtEventTime(e.time):""}`, e.createdBy, canActCalendar, `approveCalendarEvent('${e.day}',${e.id})`, `denyCalendarEvent('${e.day}',${e.id})`)).join("")}
-      ${pendingIR.map(({residentId, rep})=>{
-        const r = residents.find(x=>x.id===residentId);
-        return approvalCard(`Incident Report — ${r ? r.name : residentId}`, `${rep.types.length ? rep.types.join(", ") : "Type not specified"}${rep.info.incidentDate ? ` · ${rep.info.incidentDate}` : ""}`, rep.statements.managerReview.submittedBy, canActIncidents, `approveIncidentManagerReview('${residentId}',${rep.id})`, `denyIncidentManagerReview('${residentId}',${rep.id})`);
-      }).join("")}
     </div>`;
   return { nothing, readOnlyHint, cardsHtml };
 }
@@ -6969,7 +7118,7 @@ function allApprovalItemsFlat(){
   });
   allIncidentReports().forEach(({resident:r, rep})=>{
     const mr = rep.statements.managerReview;
-    if(!mr || !mr.status) return;
+    if(!mr || !mr.status || mr.status === "pending") return;
     items.push({ kind:"Incident Report — house manager sign-off", house:r?r.house:null, label:r?r.name:rep.residentId, addedBy:mr.submittedBy, addedAt:mr.submittedAt, status:mr.status, decidedBy:mr.decidedBy, decidedAt:mr.decidedAt });
   });
   return items;
@@ -7190,7 +7339,7 @@ async function addStaffMember(){
   const email = (state.staffDraft.email||"").trim().toLowerCase();
   if(!name){ state.staffAddError = "Enter a name."; scheduleRender(); return; }
   if(!/^\d{4}$/.test(pin)){ state.staffAddError = "PIN must be exactly 4 digits."; scheduleRender(); return; }
-  const staffHouses = (state.staffDraft.houses||[]).filter(id=>houses.some(h=>h.id===id));
+  const staffHouses = (state.staffDraft.houses||[]).filter(id=>staffHouseOptions().some(h=>h.id===id));
   if(!staffHouses.length){ state.staffAddError = "Choose at least one house."; scheduleRender(); return; }
   const role = state.staffDraft.role;
 
@@ -7389,8 +7538,8 @@ async function toggleStaffHouse(staffId, houseId){
   if(!isSystemAdmin()) return;
   syncStaffEditFormToState(staffId);
   const staff = STAFF.find(s=>s.id===staffId);
-  if(!staff || !houses.some(h=>h.id===houseId)) return;
-  const cur = staffHouseIds(staff);
+  if(!staff || !staffHouseOptions().some(h=>h.id===houseId)) return;
+  const cur = staffAssignedHouseIds(staff);
   const wasAssigned = cur.includes(houseId);
   if(wasAssigned){
     if(cur.length<=1){ state.staffEditError = "Choose at least one house."; scheduleRender(); return; }
@@ -7485,7 +7634,7 @@ function renderStaffAddForm(){
     </div>
     <div class="cp-hint" style="margin:12px 0 6px;">House${(d.houses||[]).length>1?"s":""}${d.role==="leadership"?" (default on login — Leadership can always switch to any house)":" — tap to assign more than one for staff who float between houses"}</div>
     <div class="chip-row">
-      ${houses.map(h=>`<button type="button" class="chip-btn ${(d.houses||[]).includes(h.id)?'active':''}" onclick="toggleStaffDraftHouse('${h.id}')">${esc(h.name)}</button>`).join("")}
+      ${staffHouseOptions().map(h=>`<button type="button" class="chip-btn ${(d.houses||[]).includes(h.id)?'active':''}" onclick="toggleStaffDraftHouse('${h.id}')">${esc(h.name)}</button>`).join("")}
     </div>
     <div class="cp-hint" style="margin:12px 0 6px;">${ROLE_LABELS[d.role]} access: ${d.role==='manager'||d.role==='leadership' ? "Edit everywhere." : d.role==='prn' ? "View-only everywhere, plus adding Resident Notebook notes." : "View-only everywhere, plus proposing changes (pending a manager's approval) to resident profile basics, Approved Visitors, Food Menu instructions, Supplies Received, and Calendar events."}</div>
     <div class="routine-quicklog-actions" style="margin-top:14px;">
@@ -7516,7 +7665,7 @@ function renderStaffRow(staff){
       <div style="display:flex; justify-content:space-between; gap:12px; flex-wrap:wrap; align-items:flex-start;">
         <div>
           <div style="font-weight:700;">${esc(staff.name)}${isSelf ? ` <span class="hint" style="margin:0;">(you)</span>` : ""}</div>
-          <div class="hint" style="margin:2px 0 0;">${esc(staff.label)}${staff.shift!=="n/a" ? ` · ${esc(staff.shift)} shift` : ""} · ${esc(staffHouseIds(staff).map(id=>(houses.find(h=>h.id===id)||{}).name).filter(Boolean).join(", ") || "—")}${staff.role==="leadership" ? " (default; can switch to any)" : ""} · ${(staff.pinPlain || staff.pin) ? `PIN ${esc(staff.pinPlain || staff.pin)}` : (isRealStaffId(staff.id) ? "PIN on file" : "No PIN set")}</div>
+          <div class="hint" style="margin:2px 0 0;">${esc(staff.label)}${staff.shift!=="n/a" ? ` · ${esc(staff.shift)} shift` : ""} · ${esc(staffAssignedHouseIds(staff).map(id=>(staffHouseOptions().find(h=>h.id===id)||{}).name).filter(Boolean).join(", ") || "—")}${staff.role==="leadership" ? " (default; can switch to any)" : ""} · ${(staff.pinPlain || staff.pin) ? `PIN ${esc(staff.pinPlain || staff.pin)}` : (isRealStaffId(staff.id) ? "PIN on file" : "No PIN set")}</div>
         </div>
         <div class="routine-quicklog-actions" style="margin-top:0;">
           <button class="btn small" onclick="toggleStaffEdit('${staff.id}')">✎ Edit</button>
@@ -7549,9 +7698,9 @@ function renderStaffRow(staff){
           <option value="Night" ${staff.shift==='Night'?'selected':''}>Night</option>
         </select></label>` : ""}
     </div>
-    <div class="cp-hint" style="margin:12px 0 6px;">House${staffHouseIds(staff).length>1?"s":""}${staff.role==="leadership"?" (default on login — Leadership can always switch to any house)":" — tap to assign more than one for staff who float between houses"}</div>
+    <div class="cp-hint" style="margin:12px 0 6px;">House${staffAssignedHouseIds(staff).length>1?"s":""}${staff.role==="leadership"?" (default on login — Leadership can always switch to any house)":" — tap to assign more than one for staff who float between houses"}</div>
     <div class="chip-row">
-      ${houses.map(h=>`<button type="button" class="chip-btn ${staffHouseIds(staff).includes(h.id)?'active':''}" onclick="toggleStaffHouse('${staff.id}','${h.id}')">${esc(h.name)}</button>`).join("")}
+      ${staffHouseOptions().map(h=>`<button type="button" class="chip-btn ${staffAssignedHouseIds(staff).includes(h.id)?'active':''}" onclick="toggleStaffHouse('${staff.id}','${h.id}')">${esc(h.name)}</button>`).join("")}
     </div>
     <div class="cp-hint" style="margin:12px 0 6px;">${roleAccessSummary} — access is entirely role-based (Manage Staff no longer sets it per person).</div>
     ${isLastLeadership(staff) ? `<div class="cp-hint" style="margin-top:10px;">This is the only Leadership account — add another before changing this one's role or removing it.</div>` : ""}
@@ -7565,8 +7714,8 @@ function renderStaffRow(staff){
 // when that's what you're sorting by.
 const STAFF_ROLE_SORT_ORDER = { caregiver:0, manager:1, leadership:2, prn:3 };
 function primaryStaffHouseName(staff){
-  const id = staffHouseIds(staff)[0];
-  const h = id && houses.find(x=>x.id===id);
+  const id = staffAssignedHouseIds(staff)[0];
+  const h = id && staffHouseOptions().find(x=>x.id===id);
   return h ? h.name : "";
 }
 function sortStaffList(list, sortMode){
@@ -9532,6 +9681,7 @@ function renderLeadershipPhoneHome(){
   <div class="ph-hello"><h2>${phoneGreeting()}, ${escFlagText((me.name || "").split(" ")[0])}</h2><div class="sub">${escFlagText(house ? house.name : "")} · ${TODAY}</div></div>
   <div class="ph-chips" role="tablist" aria-label="House">${houses.map(h=>`<button type="button" class="ph-chip ${h.id===state.house?"active":""}" onclick="setHouse(${jsId(h.id)})">${escFlagText(h.name)}</button>`).join("")}</div>
 
+  ${renderIncidentAckCard()}
   <div class="ph-block" style="margin-top:12px;">
     <h3>Needs you now</h3>
     <div class="ph-tiles">
@@ -9539,7 +9689,7 @@ function renderLeadershipPhoneHome(){
       ${phoneTile(overdue ? "attn" : "calm", overdue, "Overdue meds and tasks", dn.length ? `${dn.filter(c=>c.done).length} of ${dn.length} done this hour` : "Nothing due this hour", "openFullHouseDashboard()")}
       ${phoneTile("info", away.length, "Out of building", away.length ? awayNames : "Everyone is in", "openFullHouseDashboard('away')")}
       ${phoneTile("info", vis ? vis.here : "–", "Visitors in the house", vis ? (vis.all !== vis.here ? `${vis.all} across all houses` : "Signed in now") : "Open Visitor Check-In", "goView('visitors')")}
-      ${phoneTile(incidents ? "attn" : "calm", incidents, "Incident reports to review", incidents ? "Tap to open" : "None waiting", "goView('incidents')")}
+      ${phoneTile(incidents ? "attn" : "calm", incidents, "Incident reports waiting on you", incidents ? "Tap to open" : "None waiting", "goView('incidents')")}
       ${phoneTile("", list.length, "Residents", `${fall} fall risk · ${hospice} hospice`, "goView('residents')")}
     </div>
   </div>
@@ -9587,6 +9737,7 @@ function renderDashboard(){
   let html = `
   ${(phoneLeadershipUi() && state.phoneFullDashboard) ? `<button type="button" class="btn small" style="margin-bottom:12px;" onclick="goPhoneHome()">← Phone home</button>` : ""}
   ${renderDueNowBanner()}
+  ${renderIncidentAckCard()}
 
   <div class="section">
     <div class="section-head"><h2>Resident Quick View</h2><span class="hint">See the Residents page for full profiles</span></div>
@@ -12422,6 +12573,7 @@ function renderIncidentsList(){
         </div>
         <div class="incident-row-meta">
           ${irStatusBadge(rep.status)}
+          ${(rep.statements.supervisorSigned && rep.statements.supervisorSignedById) ? (()=>{ const need = irAckExpected(rep).length, got = (rep.statements.ack||[]).length; const me = currentUser(); const mine = me && me.role==="leadership" && me.id!==rep.statements.supervisorSignedById && !irAckedBy(rep, me.id); return mine ? badge("alert","Needs your acknowledgement") : (need ? badge(got>=need?"good":"away", `Acknowledged ${got} of ${need}`) : ""); })() : ""}
           <span class="dc-stamp">By ${rep.createdBy}</span>
         </div>
       </button>`).join("")}
@@ -12450,7 +12602,9 @@ function renderIncidentReportDetail(){
         <button class="btn small" onclick="printIncidentReport('${r.id}',${jsId(id)})">🖨 Print / Save as PDF</button>
       </div>
     </div>
-    ${rep.status==="needs_revision" ? `<div class="card" style="padding:12px 16px; margin-bottom:14px; background:var(--fall-bg);"><div style="font-size:13.5px; color:var(--fall-text); font-weight:700;">⚠ Sent back by the house manager — review the sections below, then Submit for Review again.</div></div>` : ""}
+    ${rep.status==="needs_revision" ? (rep.statements.sendBack
+      ? `<div class="card" style="padding:12px 16px; margin-bottom:14px; background:var(--fall-bg);"><div style="font-size:13.5px; color:var(--fall-text); font-weight:700;">⚠ Sent back for correction by ${esc(rep.statements.sendBack.by)} — ${esc(rep.statements.sendBack.at)}</div><div style="font-size:13px; color:var(--fall-text); margin-top:4px;">${esc(rep.statements.sendBack.reason)}</div><div style="font-size:12.5px; color:var(--fall-text); margin-top:4px;">Fix the sections below, then Submit for Review again.</div></div>`
+      : `<div class="card" style="padding:12px 16px; margin-bottom:14px; background:var(--fall-bg);"><div style="font-size:13.5px; color:var(--fall-text); font-weight:700;">⚠ Sent back — review the sections below, then Submit for Review again.</div></div>`) : ""}
     ${submitErrors ? `<div class="card" style="padding:14px 18px; margin-bottom:14px; background:var(--alert-bg);">
       <div style="font-size:13.5px; color:var(--alert-text); font-weight:700; margin-bottom:6px;">Please complete before submitting for review:</div>
       <ul style="margin:0; padding-left:18px; color:var(--alert-text); font-size:13px;">${submitErrors.map(m=>`<li>${esc(m)}</li>`).join("")}</ul>
@@ -12581,7 +12735,9 @@ function renderIncidentReportDetail(){
         <span class="dc-label">House manager sign-off</span>
         ${mr.status==="approved" ? `<div class="dc-stamp" style="display:inline-block;">✓ Approved by ${mr.decidedBy} — ${mr.decidedAt}</div>`
           : mr.status==="denied" ? `<div class="dc-stamp" style="display:inline-block; color:var(--fall-text);">✗ Sent back by ${mr.decidedBy} — ${mr.decidedAt}</div>`
-          : mr.status==="pending" ? `<div style="font-size:12.5px; color:var(--text-faint); font-style:italic;">Submitted by ${esc(mr.submittedBy)} — waiting in Pending Approvals.</div>`
+          : mr.status==="pending" ? (canEditIncidents && rep.status==="pending_manager_review"
+              ? `<div style="font-size:12.5px; color:var(--text-faint); font-style:italic; margin-bottom:6px;">Submitted by ${esc(mr.submittedBy)}. Correct anything that needs it in the sections above, then sign off.</div><button class="btn primary small" onclick="irSignManager(${jsId(id)})">✎ Sign off as ${esc(currentUser().name)}</button>`
+              : `<div style="font-size:12.5px; color:var(--text-faint); font-style:italic;">Submitted by ${esc(mr.submittedBy)} — waiting for the house manager to review and sign off.</div>`)
           : `<div style="font-size:12.5px; color:var(--text-faint); font-style:italic;">Not yet submitted — use Submit for Review above once Sections 1-9 are complete.</div>`}
       </div>
       <div class="dc-field">
@@ -12591,7 +12747,23 @@ function renderIncidentReportDetail(){
           : (leadership
               ? (rep.status==="pending_leadership_review" ? `<button class="btn small" onclick="irSignSupervisor(${jsId(id)})">✎ Sign as ${currentUser().name}</button>` : `<div style="font-size:12.5px; color:var(--text-faint); font-style:italic;">Awaiting the house manager's sign-off first.</div>`)
               : `<div style="font-size:12.5px; color:var(--text-faint); font-style:italic;">Leadership-only signature.</div>`)}
+        ${(leadership && !rep.statements.supervisorSigned && (rep.status==="pending_leadership_review" || rep.status==="pending_manager_review"))
+          ? (state.irSendBackOpen===id
+              ? `<div style="margin-top:10px;"><div class="dc-label">Why is it being sent back? ${req}</div><div class="dc-inline-input"><textarea id="ir-sendBackReason-${id}" style="min-height:60px;" placeholder="What needs to be corrected"></textarea></div>${state.irSendBackError===id ? `<div style="font-size:12.5px; color:var(--alert-text); margin-top:4px;">Please say what needs to be corrected.</div>` : ""}<div class="routine-quicklog-actions" style="margin-top:8px;"><button class="btn primary small" onclick="irSendBack(${jsId(id)})">Send back</button><button class="btn small" onclick="irCancelSendBack()">Cancel</button></div></div>`
+              : `<div style="margin-top:8px;"><button class="btn small" onclick="irOpenSendBack(${jsId(id)})">↩ Send back for correction</button></div>`)
+          : ""}
       </div>
+      ${(rep.statements.supervisorSigned && rep.statements.supervisorSignedById) ? (()=>{
+        const me = currentUser();
+        const acked = rep.statements.ack || [];
+        const waiting = irAckExpected(rep).filter(x=>!acked.some(a=>a.id===x.id)).map(x=>x.name);
+        const mineNeeded = me && me.role==="leadership" && me.id!==rep.statements.supervisorSignedById && !irAckedBy(rep, me.id);
+        return `<div class="dc-field"><span class="dc-label">Leadership acknowledgement</span>
+          ${acked.length ? `<div class="dc-stamp" style="display:block; margin-bottom:4px;">${acked.map(a=>`✓ ${esc(a.name)} — ${esc(a.at)}`).join("<br>")}</div>` : ""}
+          ${waiting.length ? `<div style="font-size:12.5px; color:var(--text-faint); font-style:italic;">Waiting on: ${esc(waiting.join(", "))}</div>` : (acked.length ? "" : `<div style="font-size:12.5px; color:var(--text-faint); font-style:italic;">Waiting for the other leaders to acknowledge.</div>`)}
+          ${mineNeeded ? `<button class="btn primary small" style="margin-top:6px;" onclick="irAcknowledge('${r.id}',${jsId(id)})">✓ Acknowledge</button>` : ""}
+        </div>`;
+      })() : ""}
       <div class="dc-field"><span class="dc-label">Investigation required?</span>
         ${leadership ? irSingleChip(id,"statements.investigationRequired",YN,rep.statements.investigationRequired)
           : (rep.statements.investigationRequired ? `<div class="chip-row"><span class="chip-btn active" style="pointer-events:none;">${rep.statements.investigationRequired==="yes"?"Yes":"No"}</span></div>` : `<div style="font-size:12.5px; color:var(--text-faint); font-style:italic;">Leadership-only.</div>`)}
@@ -12681,6 +12853,7 @@ function printIncidentReport(residentId, reportId){
       <dt>Staff signature</dt><dd>${rep.statements.staffSigned ? `Electronically signed by ${rep.info.staffName} — ${rep.statements.staffSignedAt}` : "Not yet signed"}</dd>
       <dt>House manager sign-off</dt><dd>${(rep.statements.managerReview||{}).status==="approved" ? `Approved by ${esc(rep.statements.managerReview.decidedBy)} — ${rep.statements.managerReview.decidedAt}` : (rep.statements.managerReview||{}).status==="denied" ? `Sent back by ${esc(rep.statements.managerReview.decidedBy)} — ${rep.statements.managerReview.decidedAt}` : "Not yet decided"}</dd>
       <dt>Supervisor/Leadership</dt><dd>${esc(rep.statements.supervisorName)||"—"}${rep.statements.supervisorSigned?` — Signed ${rep.statements.supervisorSignedAt}`:""}</dd>
+      ${(rep.statements.ack||[]).length ? `<dt>Leadership acknowledged</dt><dd>${rep.statements.ack.map(a=>esc(a.name)+" — "+esc(a.at)).join("; ")}</dd>` : ""}
       <dt>Investigation required?</dt><dd>${yn(rep.statements.investigationRequired)}</dd>
     </dl>
     <h2>10. Administrative Follow Through</h2>
@@ -13927,6 +14100,7 @@ function render(){
   if(phoneHomeActive()) visitorCheckinMaybeRefresh();
   medPassRemovalsMaybeRefresh();
   residentArchiveMaybeRefresh();
+  incidentReportsMaybeRefresh();
   applyMedPassRemovals();
   renderSidebar();
   renderTopbar();
