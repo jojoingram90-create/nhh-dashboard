@@ -10,12 +10,16 @@
         + '<meta name="apple-mobile-web-app-capable" content="yes"><meta name="mobile-web-app-capable" content="yes">'
         + '<meta name="apple-mobile-web-app-title" content="NHH Houses"><meta name="apple-mobile-web-app-status-bar-style" content="default">'
         + '<meta name="theme-color" content="#1F3F66">'
-        + '<link rel="apple-touch-icon" href="apple-touch-icon.png"><link rel="manifest" href="manifest.webmanifest">');
+        + '<link rel="manifest" href="manifest.webmanifest">');
     }
   }catch(e){}
 })();
 </script>
 <title>NHH House Dashboard</title>
+<!-- Home-screen icon for EVERY device (Oct 14): it used to be added only on phones, so adding the dashboard to an iPad home screen made the icon a
+     screenshot of the page. Full address on purpose, so it works however the page was opened. The manifest and full-screen settings stay phone-only. -->
+<link rel="apple-touch-icon" sizes="180x180" href="https://jojoingram90-create.github.io/nhh-dashboard/apple-touch-icon.png">
+<link rel="icon" type="image/png" sizes="192x192" href="https://jojoingram90-create.github.io/nhh-dashboard/icon-192.png">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Public+Sans:wght@400;500;600;700;800&family=Source+Serif+4:opsz,wght@8..60,400;8..60,600&display=swap">
 <style>
   :root{
@@ -4583,7 +4587,7 @@ async function loadCompanyHouses(){
 // Oct 14, 2026 — version stamp, changed with every delivered file. The page re-reads index.html in the background and,
 // if a newer stamp has been published, shows a "reload" bar (see checkForNewVersion). A phone, computer or iPad that
 // has had the dashboard open for days otherwise keeps running its old copy, and an old copy can lose newer data.
-const APP_BUILD = "2026-10-14f";
+const APP_BUILD = "2026-10-14g";
 const SUPABASE_URL = "https://wxvbbclbgicemegcvvae.supabase.co";
 const SUPABASE_ANON_KEY = "sb_publishable_JC2rWmQ8WOi6-Dhnd_UAXQ_9291ibar";
 const PIN_LOGIN_URL = SUPABASE_URL + "/functions/v1/pin-login";
