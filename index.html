@@ -4425,6 +4425,10 @@ function staffHouseIds(staff){
      At one house's worth of residents this is trivially cheap, and it means
      one clear place to extend later rather than dozens of scattered writes.
    ============================================================================ */
+// Oct 14, 2026 — version stamp, changed with every delivered file. The page re-reads index.html in the background and,
+// if a newer stamp has been published, shows a "reload" bar (see checkForNewVersion). A phone, computer or iPad that
+// has had the dashboard open for days otherwise keeps running its old copy, and an old copy can lose newer data.
+const APP_BUILD = "2026-10-14a";
 const SUPABASE_URL = "https://wxvbbclbgicemegcvvae.supabase.co";
 const SUPABASE_ANON_KEY = "sb_publishable_JC2rWmQ8WOi6-Dhnd_UAXQ_9291ibar";
 const PIN_LOGIN_URL = SUPABASE_URL + "/functions/v1/pin-login";
@@ -6438,6 +6442,7 @@ function renderLockScreen(){
         ${keys.map(k=> k==="" ? `<span></span>` : k==="⌫" ? `<button class="pin-key pin-key-del" onclick="pinBackspace()">⌫</button>` : `<button class="pin-key" onclick="pinDigit(${k})">${k}</button>`).join("")}
       </div>
       <div class="lock-hint">Locks automatically when this tab isn't active, or after ${IDLE_LOCK_MS/60000} minutes idle — so it's always clear which caregiver documented what.</div>
+      <div class="lock-hint" style="margin-top:8px; font-size:11px; opacity:.6;">Version ${APP_BUILD}</div>
       <div class="lock-hint" style="margin-top:14px;"><a href="#" onclick="openRemoteLogin(); return false;" style="color:var(--accent);">Sign in remotely (Leadership) →</a></div>
     </div>`;
 }
@@ -9067,6 +9072,8 @@ function visibleNavItems(){
   return groupNavItems(items);
 }
 function renderSidebar(){
+  // Oct 14: say plainly whether this session is saving to the shared database, and which version this is.
+  try{ const sf = document.getElementById("sidebarFoot"); if(sf) sf.innerHTML = (isDeviceSupabaseLive() ? "Saving to the shared database." : "Data is saved on this device only — not yet connected to a shared database.") + `<div style="margin-top:4px; font-size:11px; opacity:.7;">Version ${APP_BUILD}</div>`; }catch(e){}
   const sel = document.getElementById("houseSelect");
   const wrap = document.getElementById("housePickerWrap");
   const leadership = currentUser().role==="leadership";
@@ -14138,6 +14145,41 @@ async function loadSnapshot(){
     req.onerror = () => reject(req.error);
   });
 }
+// ---- newer-version check ----
+let updateAvailable = false, versionCheckBusy = false;
+function appBuildFromHtml(text){ const m = /const APP_BUILD = "([^"]+)"/.exec(String(text||"")); return m ? m[1] : null; }
+async function checkForNewVersion(){
+  if(versionCheckBusy || updateAvailable || typeof fetch !== "function") return;
+  let url; try{ url = String(location.href).split("#")[0].split("?")[0]; }catch(e){ return; }
+  if(!/^https?:/.test(url)) return; // opened straight from a file — nothing to compare with
+  versionCheckBusy = true;
+  try{
+    const res = await fetch(url + "?v=" + Date.now(), { cache:"no-store" });
+    if(!res || !res.ok) return;
+    const latest = appBuildFromHtml(await res.text());
+    if(latest && latest !== APP_BUILD){ updateAvailable = true; showUpdateBar(); }
+  }catch(e){ /* offline or blocked — try again later */ }
+  finally{ versionCheckBusy = false; }
+}
+function showUpdateBar(){
+  try{
+    let bar = document.getElementById("updateBar");
+    if(!bar){ bar = document.createElement("div"); bar.id = "updateBar"; document.body.appendChild(bar); }
+    bar.style.cssText = "position:fixed; top:0; left:0; right:0; z-index:99999; background:#8a4b00; color:#fff; padding:10px 14px; display:flex; gap:12px; align-items:center; justify-content:center; flex-wrap:wrap; font:600 14px system-ui,sans-serif; text-align:center;";
+    bar.innerHTML = `<span>A newer version of the dashboard is ready. Reload so what you enter is saved correctly.</span><button type="button" onclick="reloadForNewVersion()" style="background:#fff; color:#8a4b00; border:0; border-radius:8px; padding:7px 14px; font:700 14px system-ui,sans-serif; cursor:pointer;">Reload now</button>`;
+  }catch(e){}
+}
+async function reloadForNewVersion(){
+  try{ if(isDeviceSupabaseLive()) await syncLiveHouseToSupabase(); }catch(e){}
+  try{ await writeSnapshotNow(); }catch(e){}
+  location.reload();
+}
+try{
+  if(typeof setInterval === "function") setInterval(checkForNewVersion, 5*60*1000);
+  if(typeof setTimeout === "function") setTimeout(checkForNewVersion, 4000);
+  if(document && document.addEventListener) document.addEventListener("visibilitychange", ()=>{ try{ if(document.visibilityState === "visible") checkForNewVersion(); }catch(e){} });
+}catch(e){}
+
 async function bootApp(){
   try{
     const snap = await loadSnapshot();
