@@ -3810,7 +3810,10 @@ const IR_STATUS_META = {
   pending_leadership_review:  { label:"Pending Leadership Review",   kind:"away"   },
   reviewed:                   { label:"Reviewed",                    kind:"good"   }
 };
-function irStatusBadge(status){ const m = IR_STATUS_META[status] || IR_STATUS_META.open; return badge(m.kind, m.label); }
+// What the report's status reads as for the person looking (Johnna, Oct 14): everyone except Leadership sees "Reviewed" as soon as
+// the house manager has signed off — the leadership signature and acknowledgements are Leadership's own business.
+function irDisplayStatus(status){ return (status === "pending_leadership_review" && !isSystemAdmin()) ? "reviewed" : status; }
+function irStatusBadge(status){ const m = IR_STATUS_META[irDisplayStatus(status)] || IR_STATUS_META.open; return badge(m.kind, m.label); }
 
 function defaultIncidentReport(residentId){
   const id = currentUser();
@@ -4580,7 +4583,7 @@ async function loadCompanyHouses(){
 // Oct 14, 2026 — version stamp, changed with every delivered file. The page re-reads index.html in the background and,
 // if a newer stamp has been published, shows a "reload" bar (see checkForNewVersion). A phone, computer or iPad that
 // has had the dashboard open for days otherwise keeps running its old copy, and an old copy can lose newer data.
-const APP_BUILD = "2026-10-14e";
+const APP_BUILD = "2026-10-14f";
 const SUPABASE_URL = "https://wxvbbclbgicemegcvvae.supabase.co";
 const SUPABASE_ANON_KEY = "sb_publishable_JC2rWmQ8WOi6-Dhnd_UAXQ_9291ibar";
 const PIN_LOGIN_URL = SUPABASE_URL + "/functions/v1/pin-login";
@@ -4945,6 +4948,9 @@ async function loadAllStaffFromSupabase(){
   rows.forEach(r=>{
     upsertLocalStaffRecord({ id:r.id, name:r.full_name, role:r.role, houses: houseMap[r.id] || [], shiftDefault:r.shift_default });
   });
+  // Oct 14: the built-in starter people (Johnna/Tucker/Buke with ids "johnna", "tucker", "buke" and made-up PINs) used to stay in the
+  // list next to the real accounts, so Manage Staff showed Tucker and Buke twice. Once the real roster has loaded they are not needed.
+  if(rows.length){ for(let i = STAFF.length - 1; i >= 0; i--){ if(!isRealStaffId(STAFF[i].id)) STAFF.splice(i, 1); } }
   // Oct 1, 2026: Manage Staff can now show a live account's actual PIN (per Johnna's decision — see
   // get_staff_pins()'s own comment). This is a SEPARATE call, deliberately: pin_plain has no column-level
   // SELECT grant at all (same lockdown pin_hash has always had), so it's only ever reachable through this
@@ -12573,7 +12579,7 @@ function renderIncidentsList(){
         </div>
         <div class="incident-row-meta">
           ${irStatusBadge(rep.status)}
-          ${(rep.statements.supervisorSigned && rep.statements.supervisorSignedById) ? (()=>{ const need = irAckExpected(rep).length, got = (rep.statements.ack||[]).length; const me = currentUser(); const mine = me && me.role==="leadership" && me.id!==rep.statements.supervisorSignedById && !irAckedBy(rep, me.id); return mine ? badge("alert","Needs your acknowledgement") : (need ? badge(got>=need?"good":"away", `Acknowledged ${got} of ${need}`) : ""); })() : ""}
+          ${(isSystemAdmin() && rep.statements.supervisorSigned && rep.statements.supervisorSignedById) ? (()=>{ const need = irAckExpected(rep).length, got = (rep.statements.ack||[]).length; const me = currentUser(); const mine = me && me.role==="leadership" && me.id!==rep.statements.supervisorSignedById && !irAckedBy(rep, me.id); return mine ? badge("alert","Needs your acknowledgement") : (need ? badge(got>=need?"good":"away", `Acknowledged ${got} of ${need}`) : ""); })() : ""}
           <span class="dc-stamp">By ${rep.createdBy}</span>
         </div>
       </button>`).join("")}
@@ -12753,7 +12759,7 @@ function renderIncidentReportDetail(){
               : `<div style="margin-top:8px;"><button class="btn small" onclick="irOpenSendBack(${jsId(id)})">↩ Send back for correction</button></div>`)
           : ""}
       </div>
-      ${(rep.statements.supervisorSigned && rep.statements.supervisorSignedById) ? (()=>{
+      ${(leadership && rep.statements.supervisorSigned && rep.statements.supervisorSignedById) ? (()=>{
         const me = currentUser();
         const acked = rep.statements.ack || [];
         const waiting = irAckExpected(rep).filter(x=>!acked.some(a=>a.id===x.id)).map(x=>x.name);
@@ -12790,7 +12796,7 @@ function printIncidentReport(residentId, reportId){
   const rep = getIR(residentId, reportId);
   const yn = v => v==="yes"?"Yes":v==="no"?"No":v==="na"?"N/A":(v||"—");
   const neuroLabel = v => (NEURO_CHECK_OPTIONS.find(o=>o.value===v)||{}).label || "—";
-  const statusLabel = (IR_STATUS_META[rep.status]||IR_STATUS_META.open).label;
+  const statusLabel = (IR_STATUS_META[irDisplayStatus(rep.status)]||IR_STATUS_META.open).label;
   document.getElementById("printSheet").innerHTML = `
     <div class="p-head">
       <div><div class="p-brand">New Horizon Care Home — Incident Report Form</div><h1>${r.name}</h1></div>
@@ -12853,7 +12859,7 @@ function printIncidentReport(residentId, reportId){
       <dt>Staff signature</dt><dd>${rep.statements.staffSigned ? `Electronically signed by ${rep.info.staffName} — ${rep.statements.staffSignedAt}` : "Not yet signed"}</dd>
       <dt>House manager sign-off</dt><dd>${(rep.statements.managerReview||{}).status==="approved" ? `Approved by ${esc(rep.statements.managerReview.decidedBy)} — ${rep.statements.managerReview.decidedAt}` : (rep.statements.managerReview||{}).status==="denied" ? `Sent back by ${esc(rep.statements.managerReview.decidedBy)} — ${rep.statements.managerReview.decidedAt}` : "Not yet decided"}</dd>
       <dt>Supervisor/Leadership</dt><dd>${esc(rep.statements.supervisorName)||"—"}${rep.statements.supervisorSigned?` — Signed ${rep.statements.supervisorSignedAt}`:""}</dd>
-      ${(rep.statements.ack||[]).length ? `<dt>Leadership acknowledged</dt><dd>${rep.statements.ack.map(a=>esc(a.name)+" — "+esc(a.at)).join("; ")}</dd>` : ""}
+      ${(isSystemAdmin() && (rep.statements.ack||[]).length) ? `<dt>Leadership acknowledged</dt><dd>${rep.statements.ack.map(a=>esc(a.name)+" — "+esc(a.at)).join("; ")}</dd>` : ""}
       <dt>Investigation required?</dt><dd>${yn(rep.statements.investigationRequired)}</dd>
     </dl>
     <h2>10. Administrative Follow Through</h2>
