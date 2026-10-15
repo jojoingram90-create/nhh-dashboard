@@ -4263,23 +4263,25 @@ const CAT_META = { salad:{label:"Salad", icon:"🥗"}, lunch:{label:"Lunch", ico
 // rather than a fixed PHOTO_DATES allow-list, so this keeps working indefinitely.
 let foodPhotos = {};
 
-// A house can upload/replace its own salad/lunch/dessert photos freely — nothing here is visible to
-// any other house yet. Only once all three are uploaded and the house taps "Confirm Pictures" does
-// foodPhotoConfirmed[date][houseId] get set (see confirmFoodPhotosNow below), which both locks that
-// house out of replacing them and is the ONLY thing that makes them visible to every other house (see
-// the `revealPhoto` check in renderFoodPhotos). Leadership can reverse a confirm via unlockFoodPhotosNow
-// if a house needs to fix a photo after posting (agreed with Johnna, Sept 2026) — that re-opens
-// uploading for that house/date and hides the photos from other houses again until re-confirmed.
+// Every photo a house uploads is visible to every other house the moment it lands (Oct 2026, per Johnna) —
+// there is no Confirm step any more. A house can replace its own photos until 5 PM on the photo's day;
+// after that a photo that is already posted is locked (Leadership can always replace one). A slot that is
+// still empty stays open so a late photo can still be added, and shows "Missing" until then.
+// foodPhotoConfirmed is no longer used; it is kept only so older saved snapshots still load.
 let foodPhotoConfirmed = {};
+const PHOTO_LOCK_HOUR = 17;
 
 function photoLockKey(date, houseId){ return date + "::" + houseId; }
-function isPhotosConfirmed(date, houseId){ return !!((foodPhotoConfirmed[date]||{})[houseId]); }
-function photoConfirmedInfo(date, houseId){ return (foodPhotoConfirmed[date]||{})[houseId] || null; }
-// Status for a house that hasn't confirmed yet — deliberately blind to draft upload progress so
-// browsing houses never learn a photo exists before it's officially posted.
+function photoDeadlinePassed(date){ return nowRef() > new Date(date+"T"+String(PHOTO_LOCK_HOUR).padStart(2,"0")+":00:00"); }
+// A posted photo is locked once its day's 5 PM has passed. Empty slots, photos still uploading, and photos
+// whose upload failed are never locked, and Leadership can replace anything.
+function photoSlotLocked(date, entry){
+  if(!entry || entry.pending || entry.failed) return false;
+  if(isSystemAdmin()) return false;
+  return photoDeadlinePassed(date);
+}
 function unconfirmedPhotoStatus(date){
-  const deadline = new Date(date+"T17:00:00");
-  return nowRef() > deadline ? "missing" : "pending";
+  return photoDeadlinePassed(date) ? "missing" : "pending";
 }
 function shiftPhotoDate(delta){
   const next = addDaysIso(state.photoDate, delta);
@@ -4298,60 +4300,31 @@ function setPhotoDate(value){
 }
 function handlePhotoUpload(evt, houseId, cat){
   endPhotoPick(); // the camera is done — normal locking resumes
-  if(isPhotosConfirmed(state.photoDate, houseId)){ evt.target.value = ""; return; } // locked — must be unlocked first
   const file = evt.target.files[0];
   if(!file) return;
+  if(houseId !== state.house){ evt.target.value = ""; return; } // a house only uploads its own photos
   const date = state.photoDate; // captured now — an in-flight upload must not follow a later date change
+  if(!foodPhotos[date]) foodPhotos[date] = {};
+  if(!foodPhotos[date][houseId]) foodPhotos[date][houseId] = {};
+  const prev = foodPhotos[date][houseId][cat];
+  if(photoSlotLocked(date, prev)){ evt.target.value = ""; return; } // posted and past 5 PM — locked
+  const willSync = !!supabaseSession;
+  const entry = { by: currentUser().name, at:"Just now", img: prev && prev.img || null, pending: willSync };
+  foodPhotos[date][houseId][cat] = entry;
   const reader = new FileReader();
-  reader.onload = function(e){
-    if(!foodPhotos[date]) foodPhotos[date] = {};
-    if(!foodPhotos[date][houseId]) foodPhotos[date][houseId] = {};
-    foodPhotos[date][houseId][cat] = { by: currentUser().name, at:"Just now", img: e.target.result };
-    render();
-  };
+  reader.onload = function(e){ entry.img = e.target.result; scheduleRender(); };
   reader.readAsDataURL(file);
+  scheduleRender();
   // Real upload to Supabase Storage + a food_photos row — own house only, matching both RLS and
-  // canUploadHere's own h.id===state.house gate above.
-  if(supabaseSession && houseId === state.house) uploadFoodPhotoToSupabase(houseId, date, cat, file);
-}
-function requestConfirmFoodPhotos(houseId){
-  if(houseId !== state.house) return;
-  const dayData = (foodPhotos[state.photoDate]||{})[houseId] || {};
-  if(!MEAL_CATS.every(c=>dayData[c])) return; // all three required before confirming, per Johnna
-  state.foodPhotoConfirmPending = photoLockKey(state.photoDate, houseId);
-  scheduleRender();
-}
-function cancelConfirmFoodPhotos(){
-  state.foodPhotoConfirmPending = null;
-  scheduleRender();
-}
-function confirmFoodPhotosNow(houseId){
-  state.foodPhotoConfirmPending = null;
-  if(houseId !== state.house) { scheduleRender(); return; }
-  const dayData = (foodPhotos[state.photoDate]||{})[houseId] || {};
-  if(!MEAL_CATS.every(c=>dayData[c])) { scheduleRender(); return; }
-  const date = state.photoDate;
-  if(!foodPhotoConfirmed[date]) foodPhotoConfirmed[date] = {};
-  foodPhotoConfirmed[date][houseId] = { by: currentUser().name, at:"Just now" };
-  if(supabaseSession) confirmFoodPhotosToSupabase(houseId, date);
-  scheduleRender();
-}
-function requestUnlockFoodPhotos(houseId){
-  if(!isSystemAdmin()) return;
-  state.foodPhotoUnlockPending = photoLockKey(state.photoDate, houseId);
-  scheduleRender();
-}
-function cancelUnlockFoodPhotos(){
-  state.foodPhotoUnlockPending = null;
-  scheduleRender();
-}
-function unlockFoodPhotosNow(houseId){
-  state.foodPhotoUnlockPending = null;
-  if(!isSystemAdmin()) { scheduleRender(); return; }
-  const date = state.photoDate;
-  if(foodPhotoConfirmed[date]) delete foodPhotoConfirmed[date][houseId];
-  if(supabaseSession) unlockFoodPhotosToSupabase(houseId, date);
-  scheduleRender();
+  // canUploadHere's own h.id===state.house gate. The result is shown on the photo (Uploading / Posted /
+  // Upload failed) instead of being logged and forgotten.
+  if(willSync){
+    Promise.resolve(uploadFoodPhotoToSupabase(houseId, date, cat, file)).then(ok=>{
+      entry.pending = false; entry.failed = (ok === false);
+      if(!entry.failed) entry.at = "Just now";
+      scheduleRender();
+    });
+  }
 }
 function openLightbox(src){
   if(!src) return;
@@ -4364,43 +4337,35 @@ function closeLightbox(){
 }
 // Renders one house's photo card. The signed-in/toggled house (state.house) is the only one that can
 // upload here, so it's visually called out (house-photo-card--mine) and is the only card where an
-// unconfirmed slot carries "Due by 5 PM"/"Missing" pressure — every other house is just a read-only
-// feed of what's been posted, so an unconfirmed slot there stays blank rather than nagging about a
-// deadline that isn't the viewer's to hit (Oct 2026, per Johnna).
+// empty slot carries "Due by 5 PM"/"Missing" pressure — every other house is a read-only feed of what
+// has been uploaded, shown the moment it lands (Oct 2026, per Johnna).
 function renderHousePhotoCard(h){
   const dayData = (foodPhotos[state.photoDate]||{})[h.id] || {};
   const canUploadHere = h.id === state.house;
-  const confirmed = isPhotosConfirmed(state.photoDate, h.id);
-  const confirmInfo = photoConfirmedInfo(state.photoDate, h.id);
-  const key = photoLockKey(state.photoDate, h.id);
-  const allUploaded = MEAL_CATS.every(c=>dayData[c]);
 
   const slots = MEAL_CATS.map(c=>{
     const entry = dayData[c];
     const meta = CAT_META[c];
-    // Cross-house viewers never see a draft — only the owning house sees its own uploads pre-confirm.
-    // Once confirmed, the photo is locked in and visible to everyone (the whole point of Confirm Pictures).
-    const revealPhoto = confirmed || canUploadHere;
-    const media = (revealPhoto && entry && entry.img)
+    const media = (entry && entry.img)
       ? `<img class="photo-thumb" src="${entry.img}" alt="${meta.label} photo" onclick="openLightbox(this.src)">`
       : `<div class="photo-placeholder">${meta.icon}</div>`;
 
     let statusBadge = "", attribution = "";
-    if(confirmed){
-      statusBadge = badge("good","Posted");
-      attribution = entry ? `<div style="font-size:12px; color:var(--text-faint);">${entry.by} · ${entry.at}</div>` : "";
-    } else if(canUploadHere && entry){
-      statusBadge = badge("neutral","Uploaded — not posted yet");
-      attribution = `<div style="font-size:12px; color:var(--text-faint);">${entry.by} · ${entry.at}</div>`;
+    const locked = photoSlotLocked(state.photoDate, entry);
+    if(entry){
+      statusBadge = entry.failed ? badge("alert","Upload failed — tap Replace to try again")
+        : entry.pending ? badge("neutral","Uploading…")
+        : badge("good", locked && canUploadHere ? "🔒 Posted" : "Posted");
+      attribution = entry.failed ? "" : `<div style="font-size:12px; color:var(--text-faint);">${entry.by} · ${entry.at}</div>`;
     } else if(canUploadHere){
-      // Only the house actually uploading today carries the deadline messaging.
+      // Only the house actually uploading carries the deadline messaging.
       const s = unconfirmedPhotoStatus(state.photoDate);
       statusBadge = s==="missing" ? badge("alert","Missing") : badge("fall","Due by 5 PM");
     }
-    // else: another house, not yet posted — no badge, just the placeholder, until it's posted.
+    // else: another house, nothing uploaded yet — just the placeholder.
 
     const inputId = `photo-${h.id}-${c}-${state.photoDate}`;
-    const uploadControl = (canUploadHere && !confirmed) ? `
+    const uploadControl = (canUploadHere && !locked) ? `
       <label class="btn small" for="${inputId}" onclick="beginPhotoPick()">${entry?"Replace":"Upload"}</label>
       <input type="file" accept="image/*" id="${inputId}" style="display:none" onchange="handlePhotoUpload(event,'${h.id}','${c}')">` : "";
     return `<div class="photo-slot">
@@ -4412,34 +4377,9 @@ function renderHousePhotoCard(h){
     </div>`;
   }).join("");
 
-  let lockAction = "";
-  if(confirmed){
-    const unlockControl = !isSystemAdmin() ? "" : (state.foodPhotoUnlockPending === key
-      ? `<span class="hint" style="font-weight:600;">Unlock so this house can replace today's photos?</span>
-         <button class="btn primary small" onclick="unlockFoodPhotosNow('${h.id}')">Unlock</button>
-         <button class="btn small" onclick="cancelUnlockFoodPhotos()">Cancel</button>`
-      : `<button class="btn small" onclick="requestUnlockFoodPhotos('${h.id}')">Unlock</button>`);
-    lockAction = `<div class="photo-lock-row">
-      ${badge("good", `🔒 Locked${confirmInfo ? ` · confirmed by ${confirmInfo.by} · ${confirmInfo.at}` : ''}`)}
-      ${unlockControl}
-    </div>`;
-  } else if(canUploadHere){
-    lockAction = state.foodPhotoConfirmPending === key
-      ? `<div class="photo-lock-row">
-           <span class="hint" style="font-weight:600;">Lock in today's photos for every house to see?</span>
-           <button class="btn primary small" onclick="confirmFoodPhotosNow('${h.id}')">Confirm Pictures</button>
-           <button class="btn small" onclick="cancelConfirmFoodPhotos()">Cancel</button>
-         </div>`
-      : allUploaded
-        ? `<div class="photo-lock-row"><button class="btn primary small" onclick="requestConfirmFoodPhotos('${h.id}')">🔒 Confirm Pictures</button></div>`
-        : `<div class="photo-lock-row"><span class="hint">Upload all three to confirm and post them</span></div>`;
-  }
-
   return `<div class="card house-photo-card${canUploadHere ? ' house-photo-card--mine' : ''}">
     <div class="house-photo-head">
       <h3 style="font-size:14px;">${h.name}${canUploadHere ? ' <span class="shift-tag" style="margin-left:6px;">Your house — uploading</span>' : ''}</h3>
-
-      ${lockAction}
     </div>
     <div class="photo-grid">${slots}</div>
   </div>`;
@@ -4587,7 +4527,7 @@ async function loadCompanyHouses(){
 // Oct 14, 2026 — version stamp, changed with every delivered file. The page re-reads index.html in the background and,
 // if a newer stamp has been published, shows a "reload" bar (see checkForNewVersion). A phone, computer or iPad that
 // has had the dashboard open for days otherwise keeps running its old copy, and an old copy can lose newer data.
-const APP_BUILD = "2026-10-15a";
+const APP_BUILD = "2026-10-15b";
 const SUPABASE_URL = "https://wxvbbclbgicemegcvvae.supabase.co";
 const SUPABASE_ANON_KEY = "sb_publishable_JC2rWmQ8WOi6-Dhnd_UAXQ_9291ibar";
 const PIN_LOGIN_URL = SUPABASE_URL + "/functions/v1/pin-login";
@@ -5596,81 +5536,87 @@ function dailyCareLogUpdateRowFromSupabase(row){
 // code) and only for rows this signed-in user is already allowed to see — same rule as the
 // storage bucket's own read policy, which checks has_house_access() or a confirmed food_photos row.
 
-// Full replace, same as everywhere else that loads an accumulating cross-device table (Comments,
-// Supplies, etc.) — safe because this only ever runs at sign-in and when the Food Photo QC screen
-// is opened, before any local edit exists to lose (a local upload writes straight to Supabase too,
-// see uploadFoodPhotoToSupabase below, so there's nothing this could clobber).
+// Full replace of everything the database has, except photos from this device that are still uploading
+// or failed to upload (those stay on screen so they are never lost or silently dropped). Runs at sign-in,
+// when the Food Photo screen is opened, and every minute while it stays open (foodPhotosMaybeRefresh), so
+// another house's new photos appear on their own. Signed URLs are reused for 40 minutes so the pictures
+// don't reload every minute. Returns true when anything on screen changed.
+const foodPhotoSignedCache = {};
+const FOOD_PHOTO_REFRESH_MS = 60000;
+let foodPhotoRefreshTimer = null, foodPhotoRefreshAt = 0, foodPhotoLoading = false;
 async function loadFoodPhotosFromSupabase(){
-  if(!supabaseSession) return;
+  if(!supabaseSession) return false;
   const { data, error } = await sbClient.from("food_photos").select("*");
-  if(error){ console.error("Loading food photos failed:", error); return; }
+  if(error){ console.error("Loading food photos failed:", error); return false; }
   const rows = data || [];
-  let signedByPath = {};
-  if(rows.length){
+  const now = Date.now();
+  const need = rows.map(r=>r.image_url).filter(p=>p && !(foodPhotoSignedCache[p] && now - foodPhotoSignedCache[p].at < 40*60*1000));
+  if(need.length){
     const { data: signedRows, error: signErr } = await sbClient.storage
-      .from("food-photos").createSignedUrls(rows.map(r=>r.image_url), 3600);
+      .from("food-photos").createSignedUrls(need, 3600);
     if(signErr) console.error("Signing food photo URLs failed:", signErr);
-    (signedRows||[]).forEach(s=>{ if(s && s.path && s.signedUrl) signedByPath[s.path] = s.signedUrl; });
+    (signedRows||[]).forEach(s=>{ if(s && s.path && s.signedUrl) foodPhotoSignedCache[s.path] = { url: s.signedUrl, at: now }; });
   }
-  const byDate = {}, confirmedByDate = {};
+  const byDate = {};
   rows.forEach(row=>{
     if(!byDate[row.photo_date]) byDate[row.photo_date] = {};
     if(!byDate[row.photo_date][row.house_id]) byDate[row.photo_date][row.house_id] = {};
     byDate[row.photo_date][row.house_id][row.meal_category] = {
       by: (STAFF.find(s=>s.id===row.posted_by)||{}).name || "Staff",
       at: formatEventTimestamp(row.posted_at),
-      img: signedByPath[row.image_url] || null
+      img: (foodPhotoSignedCache[row.image_url]||{}).url || null
     };
-    if(row.confirmed){
-      if(!confirmedByDate[row.photo_date]) confirmedByDate[row.photo_date] = {};
-      confirmedByDate[row.photo_date][row.house_id] = {
-        by: (STAFF.find(s=>s.id===row.confirmed_by)||{}).name || "Staff",
-        at: formatEventTimestamp(row.confirmed_at)
-      };
-    }
   });
+  // keep this device's in-flight / failed uploads
+  Object.keys(foodPhotos||{}).forEach(d=>Object.keys(foodPhotos[d]||{}).forEach(hid=>Object.keys(foodPhotos[d][hid]||{}).forEach(cat=>{
+    const e = foodPhotos[d][hid][cat];
+    if(e && (e.pending || e.failed)){
+      if(!byDate[d]) byDate[d] = {};
+      if(!byDate[d][hid]) byDate[d][hid] = {};
+      byDate[d][hid][cat] = e;
+    }
+  })));
+  const changed = JSON.stringify(byDate) !== JSON.stringify(foodPhotos);
   foodPhotos = byDate;
-  foodPhotoConfirmed = confirmedByDate;
+  return changed;
+}
+// While the Food Photo screen is open, pull in other houses' new photos about once a minute. Never while
+// the camera / photo picker is open (a re-draw would throw away the picture being chosen).
+function foodPhotosMaybeRefresh(){
+  if(state.view !== "foodphotos" || !supabaseSession || foodPhotoLoading) return;
+  if(!foodPhotoRefreshTimer && typeof setInterval === "function"){
+    foodPhotoRefreshTimer = setInterval(()=>{ if(state.userId && state.view === "foodphotos") foodPhotosMaybeRefresh(true); }, FOOD_PHOTO_REFRESH_MS);
+  }
+  if(!arguments[0] && foodPhotoRefreshAt && Date.now() - foodPhotoRefreshAt < FOOD_PHOTO_REFRESH_MS - 5000) return;
+  if(photoPickActive()) return;
+  foodPhotoLoading = true; foodPhotoRefreshAt = Date.now();
+  Promise.resolve(loadFoodPhotosFromSupabase()).then(changed=>{
+    foodPhotoLoading = false;
+    if(changed && !photoPickActive()) scheduleRender();
+  }).catch(()=>{ foodPhotoLoading = false; });
 }
 // Called immediately from handlePhotoUpload, not on the usual debounced sync loop — this is a real
 // file, not JSON, and (unlike every other table) an upload has to actually reach Storage before the
 // food_photos row pointing at it means anything. Own house only, matching food_photos_insert's
 // has_house_access(house_id) + posted_by = auth.uid() and the storage bucket's own insert policy.
+// Returns true when both the file and its row were saved, false otherwise.
 async function uploadFoodPhotoToSupabase(houseId, dateIso, cat, file){
-  if(!supabaseSession) return;
+  if(!supabaseSession) return false;
   try{
     const extMatch = /\.([a-zA-Z0-9]+)$/.exec(file.name || "");
     const ext = (extMatch ? extMatch[1] : "jpg").toLowerCase();
     const path = `${houseId}/${dateIso}/${cat}.${ext}`;
     const { error: upErr } = await sbClient.storage.from("food-photos")
       .upload(path, file, { upsert:true, contentType: file.type || undefined });
-    if(upErr){ console.error("Supabase food photo upload failed:", upErr); return; }
+    if(upErr){ console.error("Supabase food photo upload failed:", upErr); return false; }
+    delete foodPhotoSignedCache[path];
     const { error: rowErr } = await sbClient.from("food_photos").upsert({
       house_id: houseId, photo_date: dateIso, meal_category: cat, image_url: path,
       posted_by: supabaseSession.user.id, posted_at: new Date().toISOString(), confirmed: false
     }, { onConflict: "house_id,photo_date,meal_category" });
-    if(rowErr) console.error("Supabase food photo row sync failed:", rowErr);
-  } catch(err){ console.error("Supabase food photo upload failed:", err); }
-}
-// Locks all three categories together in one call, matching the app's own all-or-nothing Confirm —
-// own house only (requestConfirmFoodPhotos/confirmFoodPhotosNow already enforce houseId===state.house
-// before this is ever reached).
-async function confirmFoodPhotosToSupabase(houseId, dateIso){
-  if(!supabaseSession) return;
-  const { error } = await sbClient.from("food_photos")
-    .update({ confirmed:true, confirmed_by: supabaseSession.user.id, confirmed_at: new Date().toISOString() })
-    .eq("house_id", houseId).eq("photo_date", dateIso);
-  if(error) console.error("Supabase food photo confirm failed:", error);
-}
-// Leadership-only in the app (unlockFoodPhotosNow already checks isSystemAdmin() before this is ever
-// reached) and Leadership-only at the database level too (food_photos_update blocks anyone else from
-// touching an already-confirmed row at all).
-async function unlockFoodPhotosToSupabase(houseId, dateIso){
-  if(!supabaseSession) return;
-  const { error } = await sbClient.from("food_photos")
-    .update({ confirmed:false, confirmed_by:null, confirmed_at:null })
-    .eq("house_id", houseId).eq("photo_date", dateIso);
-  if(error) console.error("Supabase food photo unlock failed:", error);
+    if(rowErr){ console.error("Supabase food photo row sync failed:", rowErr); return false; }
+    return true;
+  } catch(err){ console.error("Supabase food photo upload failed:", err); return false; }
 }
 
 // ---------------------------------------------------------------------------
@@ -6830,7 +6776,7 @@ const state = { house:"boca-bay", userId:null, view:"dashboard", residentId:null
   houseContactAddOpen:false, houseContactAddError:null, houseContactDraft:null, houseContactEditingId:null, houseContactEditError:null, houseContactRemovePending:null,
   suppliesAddOpen:false, suppliesAddError:null, suppliesDraft:null, suppliesEditingId:null, suppliesEditError:null, suppliesRemovePending:null,
   suppliesFilterResidentId:"", suppliesFilterDate:"",
-  foodPhotoConfirmPending:null, foodPhotoUnlockPending:null,
+  
   sectionEdit:{}, sectionSaveFlash:{}, masterSettingsOpen:false, masterSettingsCategory:null,
   dashboardFeedTab:"announcements", notesShowRead:false, directoryTab:"numbers",
   residentStatusOpen:false, residentStatusDraft:null,
@@ -9080,7 +9026,7 @@ function goView(v){
   state.view=v; state.residentId=null; render();
   // Refresh from Supabase on the way into Food Photo QC — cross-house data another device may have
   // just confirmed, and the signed URLs from the last load may be close to their 1-hour expiry.
-  if(v==="foodphotos" && supabaseSession) loadFoodPhotosFromSupabase().then(render);
+  if(v==="foodphotos" && supabaseSession){ foodPhotoRefreshAt = Date.now(); loadFoodPhotosFromSupabase().then(render); }
 }
 function openResident(id){
   { const ar = residents.find(x=>x.id===id); if(ar && ar.archived && !moduleEdit('residents')) return; } // only Managers and Leadership open the archive
@@ -14111,6 +14057,7 @@ function render(){
   medPassRemovalsMaybeRefresh();
   residentArchiveMaybeRefresh();
   incidentReportsMaybeRefresh();
+  foodPhotosMaybeRefresh();
   applyMedPassRemovals();
   renderSidebar();
   renderTopbar();
