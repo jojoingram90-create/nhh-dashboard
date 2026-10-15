@@ -4587,7 +4587,7 @@ async function loadCompanyHouses(){
 // Oct 14, 2026 — version stamp, changed with every delivered file. The page re-reads index.html in the background and,
 // if a newer stamp has been published, shows a "reload" bar (see checkForNewVersion). A phone, computer or iPad that
 // has had the dashboard open for days otherwise keeps running its old copy, and an old copy can lose newer data.
-const APP_BUILD = "2026-10-14g";
+const APP_BUILD = "2026-10-15a";
 const SUPABASE_URL = "https://wxvbbclbgicemegcvvae.supabase.co";
 const SUPABASE_ANON_KEY = "sb_publishable_JC2rWmQ8WOi6-Dhnd_UAXQ_9291ibar";
 const PIN_LOGIN_URL = SUPABASE_URL + "/functions/v1/pin-login";
@@ -4604,7 +4604,7 @@ const SUPABASE_HOUSE_IDS = {
 };
 // Houses whose day-to-day data (residents, contacts, etc.) actually lives in Supabase now.
 // Add to this set as each additional house is migrated in its own turn.
-const SUPABASE_LIVE_HOUSE_IDS = new Set([ SUPABASE_HOUSE_IDS["Knollview"], SUPABASE_HOUSE_IDS["Rocky Top"], SUPABASE_HOUSE_IDS["Campbell"], SUPABASE_HOUSE_IDS["Los Alamos"], SUPABASE_HOUSE_IDS["Cheverny"] ]);
+const SUPABASE_LIVE_HOUSE_IDS = new Set([ SUPABASE_HOUSE_IDS["Knollview"], SUPABASE_HOUSE_IDS["Rocky Top"], SUPABASE_HOUSE_IDS["Campbell"], SUPABASE_HOUSE_IDS["Los Alamos"], SUPABASE_HOUSE_IDS["Cheverny"], SUPABASE_HOUSE_IDS["Boca Bay"] ]);
 
 const sbClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
