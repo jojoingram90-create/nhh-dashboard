@@ -594,7 +594,7 @@
   .perm-chip.perm-view.active{ background:var(--away-dot); border-color:var(--away-dot); }
   .perm-chip.perm-edit.active{ background:var(--good-dot); border-color:var(--good-dot); }
   .dc-inline-input{ margin-top:9px; }
-  .dc-inline-input input[type=text], .dc-inline-input input[type=number], .dc-inline-input input[type=time], .dc-inline-input textarea{
+  .dc-inline-input input[type=text], .dc-inline-input input[type=number], .dc-inline-input input[type=tel], .dc-inline-input input[type=time], .dc-inline-input textarea{
     width:100%; border:1px solid var(--border); background:var(--surface-alt); border-radius:8px; padding:8px 11px; color:var(--text); font-family:inherit; font-size:13.5px;
   }
   .dc-inline-input textarea{ min-height:44px; resize:vertical; }
@@ -683,6 +683,18 @@
     .shower-table{ display:block; overflow-x:auto; }
     .cal-grid{ grid-template-columns:repeat(7,minmax(0,1fr)); gap:4px; }
     .resident-grid{ grid-template-columns:1fr; }
+    /* Food Photos on a phone: smaller tiles so Salad, Lunch and Dessert all fit on one screen */
+    .house-photo-card{ padding:10px; }
+    .house-photo-head{ margin-bottom:8px; }
+    .house-photo-head h3{ font-size:13.5px; }
+    .photo-grid{ gap:6px; }
+    .photo-slot{ padding:6px; gap:4px; min-width:0; }
+    .photo-thumb, .photo-placeholder{ height:68px; }
+    .photo-placeholder{ font-size:22px; }
+    .photo-slot > div{ max-width:100%; overflow-wrap:anywhere; }
+    .photo-slot .btn.small{ min-height:34px; padding:6px 8px; font-size:12.5px; width:100%; text-align:center; box-sizing:border-box; }
+    .photo-slot .badge{ white-space:normal; text-align:center; justify-content:center; font-size:11px; padding:3px 8px; line-height:1.25; border-radius:12px; }
+    .date-nav{ flex-wrap:wrap; gap:6px; }
     #phoneTabbar.show{ display:flex; position:fixed; left:0; right:0; bottom:0; z-index:50; background:var(--surface); border-top:1px solid var(--border); padding:6px 6px calc(6px + env(safe-area-inset-bottom)); gap:4px; box-shadow:0 -4px 16px rgba(20,32,52,.08); }
     body.has-tabbar #content{ padding-bottom:calc(84px + env(safe-area-inset-bottom)); }
     .ph-tab{ flex:1; display:flex; flex-direction:column; align-items:center; gap:2px; background:none; border:none; font:inherit; font-size:11.5px; font-weight:700; color:var(--text-muted); padding:6px 2px; border-radius:10px; min-height:52px; position:relative; cursor:pointer; }
@@ -922,10 +934,24 @@ const HOUSE_CONTACT_CATEGORIES = [
   { key:"management", label:"Management" }
 ];
 function houseContactCategoryLabel(key){ return (HOUSE_CONTACT_CATEGORIES.find(c=>c.key===key)||{}).label || key; }
-// Each contact is stamped with the house it was added under (.house) — per-house, like residents.
+// Each contact is stamped with the house it was added under (.house) — per-house, like residents — unless
+// Leadership marked it "All houses" (.allHouses, Oct 2026): then it shows in every house's House Numbers list
+// and only Leadership can change or remove it. Saved in the shared database (house_directory).
 let houseContacts = [];
 let houseContactIdSeq = 1;
-function currentHouseContacts(){ return houseContacts.filter(c=>c.house===state.house); }
+function currentHouseContacts(){ return houseContacts.filter(c=>c.allHouses || c.house===state.house); }
+// Whether the signed-in person may change this number: the directory module's edit right, and for an
+// all-houses number, Leadership only.
+function canEditHouseContact(c){ return moduleEdit('directory') && (!c || !c.allHouses || isSystemAdmin()); }
+const sbContactSigs = {}; // id -> what the database is known to hold, so only changed numbers are written
+function houseContactSig(c){ return JSON.stringify([c.house, c.name, c.phone, c.category, c.notes||"", !!c.allHouses]); }
+function houseContactRowForSupabase(c){
+  return { id:c.id, house_id:c.house, name:c.name, phone:c.phone || null, category:c.category, notes:c.notes || null, all_houses:!!c.allHouses };
+}
+function houseContactRowFromSupabase(row){
+  return { id:row.id, house:row.house_id, name:row.name||"", phone:row.phone||"", category:row.category, notes:row.notes||"", allHouses:!!row.all_houses };
+}
+function newHouseContactId(){ return (isDeviceSupabaseLive() && typeof crypto!=="undefined" && crypto.randomUUID) ? crypto.randomUUID() : `hc-${houseContactIdSeq++}`; }
 
 // Supplies Received — a simple per-resident log (what was received, date received, optional notes),
 // gated by its own "supplies" module permission like every other nav section. See renderSupplies().
@@ -4309,22 +4335,45 @@ function handlePhotoUpload(evt, houseId, cat){
   const prev = foodPhotos[date][houseId][cat];
   if(photoSlotLocked(date, prev)){ evt.target.value = ""; return; } // posted and past 5 PM — locked
   const willSync = !!supabaseSession;
-  const entry = { by: currentUser().name, at:"Just now", img: prev && prev.img || null, pending: willSync };
+  const entry = { by: currentUser().name, at:"Just now", img: prev && prev.img || null, pending: willSync, saved: false };
   foodPhotos[date][houseId][cat] = entry;
-  const reader = new FileReader();
-  reader.onload = function(e){ entry.img = e.target.result; scheduleRender(); };
-  reader.readAsDataURL(file);
   scheduleRender();
-  // Real upload to Supabase Storage + a food_photos row — own house only, matching both RLS and
-  // canUploadHere's own h.id===state.house gate. The result is shown on the photo (Uploading / Posted /
-  // Upload failed) instead of being logged and forgotten.
-  if(willSync){
-    Promise.resolve(uploadFoodPhotoToSupabase(houseId, date, cat, file)).then(ok=>{
-      entry.pending = false; entry.failed = (ok === false);
-      if(!entry.failed) entry.at = "Just now";
-      scheduleRender();
-    });
+  // 1) shrink it, 2) keep a copy on this iPad (survives a crash or reopen), 3) upload it. The result is shown on
+  // the photo (Saved on this iPad / Posted / Upload failed) instead of being logged and forgotten.
+  processFoodPhoto(entry, file, houseId, date, cat, willSync);
+}
+async function processFoodPhoto(entry, file, houseId, date, cat, willSync){
+  let photo = file;
+  try{ photo = await shrinkFoodPhoto(file); }catch(e){ photo = file; } // never lose the photo over a resize problem
+  let dataUrl = null;
+  try{ dataUrl = await blobToDataUrl(photo); }catch(e){ dataUrl = null; }
+  if(foodPhotos[date] && foodPhotos[date][houseId] && foodPhotos[date][houseId][cat] !== entry) return; // replaced by a newer photo meanwhile
+  if(dataUrl) entry.img = dataUrl;
+  scheduleRender();
+  if(!willSync) return;
+  // keep the copy on this iPad first — this is what survives a crash
+  if(dataUrl){
+    const rec = { key: foodPhotoOutboxKey(houseId, date, cat), houseId, date, cat, dataUrl, type: (photo && photo.type) || "image/jpeg",
+                  by: entry.by, savedAt: Date.now() };
+    entry.saved = await foodPhotoOutboxPut(rec);
+    if(entry.saved){ foodPhotoOutbox[rec.key] = rec; foodPhotoOutboxKick(); }
+    scheduleRender();
   }
+  if(foodPhotos[date] && foodPhotos[date][houseId] && foodPhotos[date][houseId][cat] !== entry) return;
+  const key = foodPhotoOutboxKey(houseId, date, cat);
+  foodPhotoInFlight[key] = true;
+  let ok = false;
+  try{ ok = await uploadFoodPhotoToSupabase(houseId, date, cat, foodPhotoAsFile(photo, dataUrl)); }
+  finally{ delete foodPhotoInFlight[key]; }
+  const stillCurrent = foodPhotos[date] && foodPhotos[date][houseId] && foodPhotos[date][houseId][cat] === entry;
+  if(ok){
+    if(stillCurrent || !foodPhotoOutbox[key] || foodPhotoOutbox[key].dataUrl === dataUrl){ delete foodPhotoOutbox[key]; await foodPhotoOutboxDelete(key); }
+  }
+  if(stillCurrent){
+    entry.pending = false; entry.failed = !ok;
+    if(ok){ entry.at = "Just now"; entry.saved = false; }
+  }
+  scheduleRender();
 }
 function openLightbox(src){
   if(!src) return;
@@ -4353,10 +4402,10 @@ function renderHousePhotoCard(h){
     let statusBadge = "", attribution = "";
     const locked = photoSlotLocked(state.photoDate, entry);
     if(entry){
-      statusBadge = entry.failed ? badge("alert","Upload failed — tap Replace to try again")
-        : entry.pending ? badge("neutral","Uploading…")
+      statusBadge = entry.failed ? (entry.saved ? badge("alert","Not uploaded yet — saved on this iPad, will retry") : badge("alert","Upload failed — tap Replace to try again"))
+        : entry.pending ? badge("neutral", entry.saved ? "Saved on this iPad — uploading…" : "Uploading…")
         : badge("good", locked && canUploadHere ? "🔒 Posted" : "Posted");
-      attribution = entry.failed ? "" : `<div style="font-size:12px; color:var(--text-faint);">${entry.by} · ${entry.at}</div>`;
+      attribution = (entry.failed && !entry.saved) ? "" : `<div style="font-size:12px; color:var(--text-faint);">${entry.by} · ${entry.at}</div>`;
     } else if(canUploadHere){
       // Only the house actually uploading carries the deadline messaging.
       const s = unconfirmedPhotoStatus(state.photoDate);
@@ -4527,7 +4576,7 @@ async function loadCompanyHouses(){
 // Oct 14, 2026 — version stamp, changed with every delivered file. The page re-reads index.html in the background and,
 // if a newer stamp has been published, shows a "reload" bar (see checkForNewVersion). A phone, computer or iPad that
 // has had the dashboard open for days otherwise keeps running its old copy, and an old copy can lose newer data.
-const APP_BUILD = "2026-10-15b";
+const APP_BUILD = "2026-10-21a";
 const SUPABASE_URL = "https://wxvbbclbgicemegcvvae.supabase.co";
 const SUPABASE_ANON_KEY = "sb_publishable_JC2rWmQ8WOi6-Dhnd_UAXQ_9291ibar";
 const PIN_LOGIN_URL = SUPABASE_URL + "/functions/v1/pin-login";
@@ -4574,6 +4623,16 @@ const DEVICE_ID = getOrCreateDeviceId();
     const qs = params.toString();
     try{ window.history.replaceState({}, "", window.location.pathname + (qs?("?"+qs):"")); }catch(e){}
   }
+})();
+// The automatic update opens the page with ?nhhv=<build> to skip a cached copy — remove it from the address once loaded.
+(function stripUpdateParam(){
+  try{
+    const params = new URLSearchParams(window.location.search);
+    if(!params.has("nhhv")) return;
+    params.delete("nhhv");
+    const qs = params.toString();
+    window.history.replaceState({}, "", window.location.pathname + (qs?("?"+qs):""));
+  }catch(e){}
 })();
 function getDeviceHouseId(){
   try{ return localStorage.getItem("nhh_device_house_id") || null; }catch(e){ return null; }
@@ -5536,6 +5595,168 @@ function dailyCareLogUpdateRowFromSupabase(row){
 // code) and only for rows this signed-in user is already allowed to see — same rule as the
 // storage bucket's own read policy, which checks has_house_access() or a confirmed food_photos row.
 
+// ---------------------------------------------------------------------------
+// Food photo outbox — a copy of every photo, kept on this iPad until it has reached the shared feed
+// ---------------------------------------------------------------------------
+// Stored in the browser's own storage (IndexedDB, a separate small database so it never touches the main
+// save). A photo is written here the moment it is taken, retried automatically — on reopen, when the
+// connection returns, and every minute — and removed only after the upload has succeeded. A crash, a reload
+// or a dropped connection therefore never loses a photo. (Saving into the iPad's Photos app is not possible
+// silently from a web page.)
+const FP_OUTBOX_DB = "nhh_food_photo_outbox", FP_OUTBOX_STORE = "photos";
+let foodPhotoOutbox = {};          // key -> record, mirrors what is stored (loaded at start-up)
+const foodPhotoInFlight = {};      // key -> true while an upload for that slot is running
+let fpOutboxDbPromise = null, foodPhotoOutboxTimer = null, foodPhotoFlushing = false;
+const FOOD_PHOTO_MAX_EDGE = 1600;
+function foodPhotoOutboxKey(houseId, date, cat){ return houseId + "|" + date + "|" + cat; }
+function fpOutboxDb(){
+  if(!fpOutboxDbPromise){
+    fpOutboxDbPromise = new Promise((resolve, reject)=>{
+      try{
+        if(typeof indexedDB === "undefined" || !indexedDB){ reject(new Error("IndexedDB not available")); return; }
+        const req = indexedDB.open(FP_OUTBOX_DB, 1);
+        req.onupgradeneeded = ()=>{ req.result.createObjectStore(FP_OUTBOX_STORE, { keyPath:"key" }); };
+        req.onsuccess = ()=>resolve(req.result);
+        req.onerror = ()=>reject(req.error);
+      }catch(e){ reject(e); }
+    });
+  }
+  return fpOutboxDbPromise;
+}
+async function foodPhotoOutboxPut(rec){
+  try{
+    const db = await fpOutboxDb();
+    await new Promise((resolve, reject)=>{
+      const tx = db.transaction(FP_OUTBOX_STORE, "readwrite");
+      tx.objectStore(FP_OUTBOX_STORE).put(rec);
+      tx.oncomplete = resolve; tx.onerror = ()=>reject(tx.error); tx.onabort = ()=>reject(tx.error);
+    });
+    return true;
+  }catch(e){ console.error("Could not keep a copy of the food photo on this device:", e); return false; }
+}
+async function foodPhotoOutboxDelete(key){
+  try{
+    const db = await fpOutboxDb();
+    await new Promise((resolve, reject)=>{
+      const tx = db.transaction(FP_OUTBOX_STORE, "readwrite");
+      tx.objectStore(FP_OUTBOX_STORE).delete(key);
+      tx.oncomplete = resolve; tx.onerror = ()=>reject(tx.error); tx.onabort = ()=>reject(tx.error);
+    });
+  }catch(e){ console.error("Could not clear a saved food photo:", e); }
+}
+async function foodPhotoOutboxAll(){
+  try{
+    const db = await fpOutboxDb();
+    return await new Promise((resolve, reject)=>{
+      const req = db.transaction(FP_OUTBOX_STORE, "readonly").objectStore(FP_OUTBOX_STORE).getAll();
+      req.onsuccess = ()=>resolve(req.result || []); req.onerror = ()=>reject(req.error);
+    });
+  }catch(e){ return []; }
+}
+// Loaded once when the page starts, so saved photos are on screen again after a crash/reopen.
+async function foodPhotoOutboxLoad(){
+  const all = await foodPhotoOutboxAll();
+  all.forEach(r=>{ if(r && r.key && r.dataUrl) foodPhotoOutbox[r.key] = r; });
+  if(Object.keys(foodPhotoOutbox).length){ mergeOutboxIntoFoodPhotos(); foodPhotoOutboxKick(); scheduleRender(); }
+}
+// Puts every saved-but-not-yet-uploaded photo back on screen (marked "Saved on this iPad").
+function mergeOutboxIntoFoodPhotos(){
+  Object.keys(foodPhotoOutbox).forEach(k=>{
+    const r = foodPhotoOutbox[k];
+    if(!foodPhotos[r.date]) foodPhotos[r.date] = {};
+    if(!foodPhotos[r.date][r.houseId]) foodPhotos[r.date][r.houseId] = {};
+    const cur = foodPhotos[r.date][r.houseId][r.cat];
+    if(cur && cur.pending && cur.saved) return;
+    foodPhotos[r.date][r.houseId][r.cat] = { by: r.by || "Staff", at: "Not uploaded yet", img: r.dataUrl, pending: true, saved: true };
+  });
+}
+function dataUrlToBlob(dataUrl){
+  const m = /^data:([^;,]*)(;base64)?,(.*)$/s.exec(String(dataUrl||""));
+  if(!m) throw new Error("not a data URL");
+  const bin = m[2] ? atob(m[3]) : decodeURIComponent(m[3]);
+  const bytes = new Uint8Array(bin.length);
+  for(let i=0;i<bin.length;i++) bytes[i] = bin.charCodeAt(i);
+  return new Blob([bytes], { type: m[1] || "image/jpeg" });
+}
+function blobToDataUrl(blob){
+  return new Promise((resolve, reject)=>{
+    const fr = new FileReader();
+    fr.onload = ()=>resolve(fr.result); fr.onerror = ()=>reject(fr.error);
+    fr.readAsDataURL(blob);
+  });
+}
+function foodPhotoAsFile(photo, dataUrl){
+  try{
+    const blob = photo && photo.size !== undefined ? photo : dataUrlToBlob(dataUrl);
+    const type = blob.type || "image/jpeg";
+    const ext = /png/.test(type) ? "png" : /webp/.test(type) ? "webp" : "jpg";
+    return (typeof File === "function") ? new File([blob], "photo." + ext, { type }) : Object.assign(blob, { name: "photo." + ext });
+  }catch(e){ return photo; }
+}
+// Shrinks a big camera photo to a 1600 px long side (still sharp for a meal picture) and re-saves it as a JPEG.
+// If anything about that fails, or the result isn't smaller, the original photo is used untouched.
+async function shrinkFoodPhoto(file){
+  if(!file || typeof document === "undefined" || !file.type || file.type.indexOf("image/") !== 0) return file;
+  if(file.type === "image/gif" || file.type === "image/svg+xml") return file;
+  let bmp = null;
+  try{
+    if(typeof createImageBitmap === "function") bmp = await createImageBitmap(file, { imageOrientation:"from-image" });
+  }catch(e){ bmp = null; }
+  let w, h, src;
+  if(bmp){ w = bmp.width; h = bmp.height; src = bmp; }
+  else{
+    const url = URL.createObjectURL(file);
+    try{
+      const img = await new Promise((resolve, reject)=>{ const i = new Image(); i.onload = ()=>resolve(i); i.onerror = reject; i.src = url; });
+      w = img.naturalWidth; h = img.naturalHeight; src = img;
+    } finally { URL.revokeObjectURL(url); }
+  }
+  if(!w || !h) return file;
+  const scale = Math.min(1, FOOD_PHOTO_MAX_EDGE / Math.max(w, h));
+  const cw = Math.max(1, Math.round(w * scale)), ch = Math.max(1, Math.round(h * scale));
+  const canvas = document.createElement("canvas"); canvas.width = cw; canvas.height = ch;
+  const ctx = canvas.getContext("2d"); if(!ctx) return file;
+  ctx.drawImage(src, 0, 0, cw, ch);
+  if(bmp && bmp.close) bmp.close();
+  const blob = await new Promise(res=>canvas.toBlob(res, "image/jpeg", 0.85));
+  if(!blob || blob.size === 0) return file;
+  return (blob.size < file.size || scale < 1) ? blob : file;
+}
+// Uploads every saved photo that hasn't reached the feed yet. Own signed-in house only; skips a slot that is
+// already uploading, and drops a saved photo if the database already holds a newer one for that slot.
+async function foodPhotoOutboxFlush(){
+  if(!supabaseSession || foodPhotoFlushing) return;
+  const keys = Object.keys(foodPhotoOutbox).filter(k=>foodPhotoOutbox[k].houseId === state.house && !foodPhotoInFlight[k]);
+  if(!keys.length) return;
+  foodPhotoFlushing = true;
+  try{
+    for(const key of keys){
+      const r = foodPhotoOutbox[key]; if(!r || foodPhotoInFlight[key]) continue;
+      const entry = (((foodPhotos[r.date]||{})[r.houseId])||{})[r.cat];
+      foodPhotoInFlight[key] = true;
+      let ok = false;
+      try{ ok = await uploadFoodPhotoToSupabase(r.houseId, r.date, r.cat, foodPhotoAsFile(null, r.dataUrl)); }
+      catch(e){ ok = false; }
+      finally{ delete foodPhotoInFlight[key]; }
+      if(ok){
+        if(foodPhotoOutbox[key] && foodPhotoOutbox[key].savedAt === r.savedAt){ delete foodPhotoOutbox[key]; await foodPhotoOutboxDelete(key); }
+        if(entry && entry.saved){ entry.pending = false; entry.saved = false; entry.failed = false; entry.at = "Just now"; }
+      } else if(entry && entry.saved){ entry.pending = false; entry.failed = true; }
+    }
+  } finally { foodPhotoFlushing = false; }
+  scheduleRender();
+}
+// Keeps trying in the background while anything is waiting, and again as soon as the connection returns.
+function foodPhotoOutboxKick(){
+  if(!foodPhotoOutboxTimer && typeof setInterval === "function"){
+    foodPhotoOutboxTimer = setInterval(()=>{
+      if(!Object.keys(foodPhotoOutbox).length){ clearInterval(foodPhotoOutboxTimer); foodPhotoOutboxTimer = null; return; }
+      if(state.userId) foodPhotoOutboxFlush();
+    }, 60000);
+    if(typeof window !== "undefined" && window.addEventListener) window.addEventListener("online", ()=>{ if(state.userId) foodPhotoOutboxFlush(); });
+  }
+}
+
 // Full replace of everything the database has, except photos from this device that are still uploading
 // or failed to upload (those stay on screen so they are never lost or silently dropped). Runs at sign-in,
 // when the Food Photo screen is opened, and every minute while it stays open (foodPhotosMaybeRefresh), so
@@ -5567,7 +5788,13 @@ async function loadFoodPhotosFromSupabase(){
       img: (foodPhotoSignedCache[row.image_url]||{}).url || null
     };
   });
-  // keep this device's in-flight / failed uploads
+  // A saved copy on this iPad is dropped if the database already holds a newer photo for that slot.
+  for(const k of Object.keys(foodPhotoOutbox)){
+    const r = foodPhotoOutbox[k];
+    const row = rows.find(x=>x.house_id === r.houseId && x.photo_date === r.date && x.meal_category === r.cat);
+    if(row && !foodPhotoInFlight[k] && new Date(row.posted_at).getTime() >= r.savedAt){ delete foodPhotoOutbox[k]; await foodPhotoOutboxDelete(k); }
+  }
+  // keep this device's in-flight / failed / saved-but-not-uploaded photos
   Object.keys(foodPhotos||{}).forEach(d=>Object.keys(foodPhotos[d]||{}).forEach(hid=>Object.keys(foodPhotos[d][hid]||{}).forEach(cat=>{
     const e = foodPhotos[d][hid][cat];
     if(e && (e.pending || e.failed)){
@@ -5576,8 +5803,11 @@ async function loadFoodPhotosFromSupabase(){
       byDate[d][hid][cat] = e;
     }
   })));
-  const changed = JSON.stringify(byDate) !== JSON.stringify(foodPhotos);
+  const prevPhotos = foodPhotos;
   foodPhotos = byDate;
+  mergeOutboxIntoFoodPhotos();
+  const changed = JSON.stringify(foodPhotos) !== JSON.stringify(prevPhotos);
+  if(Object.keys(foodPhotoOutbox).length){ foodPhotoOutboxKick(); foodPhotoOutboxFlush(); }
   return changed;
 }
 // While the Food Photo screen is open, pull in other houses' new photos about once a minute. Never while
@@ -5731,6 +5961,17 @@ async function loadHouseDataFromSupabase(houseId){
     calendarEvents[day].push(event);
   });
   await loadCleaningFromSupabase(houseId); // Batch L items 100/101
+
+  // House Numbers (Directory): this house's own numbers plus every all-houses number. Numbers typed on this
+  // device before they were saved to the database (non-UUID ids) are kept and uploaded by the next sync.
+  const { data: dirRows, error: dirErr } = await sbClient.from("house_directory").select("*");
+  if(dirErr){ console.error("Loading house numbers failed:", dirErr); }
+  else{
+    const keep = houseContacts.filter(c=>!isRealStaffId(c.id) || (c.house!==houseId && !c.allHouses));
+    const loaded = (dirRows||[]).filter(r=>r.house_id===houseId || r.all_houses).map(houseContactRowFromSupabase);
+    houseContacts = keep.concat(loaded);
+    loaded.forEach(c=>{ sbContactSigs[c.id] = houseContactSig(c); });
+  }
 
   // Master menu is company-wide (no house_id), so it's loaded once here regardless of which house
   // signed in — every house reads and writes the same 42 rows. House-standard meal times are the one
@@ -6218,6 +6459,27 @@ async function syncLiveHouseToSupabase(){
       }
     }
 
+    // House Numbers (Directory): Manager/Leadership write this house's own numbers; all-houses numbers are
+    // Leadership only (house_directory's RLS). Only changed numbers are sent. A number typed before it was saved
+    // to the database (id like "hc-3") gets a real id here the first time it is sent.
+    if(canWriteClinicalToSupabase()){
+      const isLead = isSystemAdmin();
+      const mineOrAll = houseContacts.filter(c=>c.house===houseId || c.allHouses);
+      for(const c of mineOrAll){
+        if(c.allHouses && !isLead) continue;
+        if(!isRealStaffId(c.id)){
+          if(c.house !== houseId) continue;
+          const oldId = c.id; c.id = (typeof crypto!=="undefined" && crypto.randomUUID) ? crypto.randomUUID() : c.id;
+          if(!isRealStaffId(c.id)) continue;
+          if(state.houseContactEditingId===oldId) state.houseContactEditingId = c.id;
+        }
+        const sig = houseContactSig(c);
+        if(sbContactSigs[c.id] === sig) continue;
+        const { error: hcErr } = await sbClient.from("house_directory").upsert(houseContactRowForSupabase(c), { onConflict: "id" });
+        if(hcErr) console.error("Supabase house number sync failed:", hcErr); else sbContactSigs[c.id] = sig;
+      }
+    }
+
     // Calendar is house-wide (not per-resident), so it's scoped directly off houseId/state.house
     // rather than localList/localIds. Series (the recurrence definition) stays Manager/Leadership-only,
     // matching calendar_series' RLS exactly (same gate as the clinical-lock tables above). Individual
@@ -6431,6 +6693,9 @@ async function attemptSupabasePinLogin(pin){
   supabaseLoginError = null;
   render();
   try{
+    // Make sure this is the newest version before anyone gets in; if it isn't, the page updates itself
+    // and the PIN is entered again after the reload.
+    if(await updateBeforeSignIn()) return;
     const resp = await fetch(PIN_LOGIN_URL, {
       method: "POST",
       headers: {
@@ -8205,7 +8470,7 @@ function slugifyHouseContactId(name){
 function toggleHouseContactAdd(){
   if(!moduleEdit('directory')) return;
   state.houseContactAddOpen = !state.houseContactAddOpen;
-  if(state.houseContactAddOpen) state.houseContactDraft = { name:"", phone:"", category:"home_health", notes:"" };
+  if(state.houseContactAddOpen) state.houseContactDraft = { name:"", phone:"", category:"home_health", notes:"", allHouses:false };
   state.houseContactAddError = null;
   scheduleRender();
 }
@@ -8222,6 +8487,19 @@ function setHouseContactDraftCategory(key){
   state.houseContactDraft.category = key;
   scheduleRender();
 }
+function setHouseContactDraftAllHouses(on){
+  if(!isSystemAdmin() || !state.houseContactDraft) return;
+  syncHouseContactDraftFormToState();
+  state.houseContactDraft.allHouses = !!on;
+  scheduleRender();
+}
+function setHouseContactAllHouses(id, on){
+  const c = houseContacts.find(x=>x.id===id);
+  if(!c || !isSystemAdmin()) return;
+  syncHouseContactEditFormToState(id);
+  c.allHouses = !!on;
+  scheduleRender();
+}
 function addHouseContact(){
   if(!moduleEdit('directory') || !state.houseContactDraft) return;
   syncHouseContactDraftFormToState();
@@ -8230,14 +8508,14 @@ function addHouseContact(){
   const phone = (d.phone||"").trim();
   if(!name){ state.houseContactAddError = "Enter a name."; scheduleRender(); return; }
   if(!phone){ state.houseContactAddError = "Enter a phone number."; scheduleRender(); return; }
-  houseContacts.push({ id: `hc-${houseContactIdSeq++}`, house: state.house, name, phone, category: d.category, notes: (d.notes||"").trim() });
+  houseContacts.push({ id: newHouseContactId(), house: state.house, name, phone, category: d.category, notes: (d.notes||"").trim(), allHouses: !!(d.allHouses && isSystemAdmin()) });
   state.houseContactAddOpen = false;
   state.houseContactAddError = null;
   state.houseContactDraft = null;
   scheduleRender();
 }
 function toggleHouseContactEdit(id){
-  if(!moduleEdit('directory')) return;
+  if(!canEditHouseContact(houseContacts.find(x=>x.id===id))) return;
   state.houseContactEditingId = state.houseContactEditingId===id ? null : id;
   state.houseContactEditError = null;
   scheduleRender();
@@ -8260,7 +8538,7 @@ function setHouseContactCategory(id, key){
   scheduleRender();
 }
 function requestRemoveHouseContact(id){
-  if(!moduleEdit('directory')) return;
+  if(!canEditHouseContact(houseContacts.find(x=>x.id===id))) return;
   state.houseContactRemovePending = id;
   scheduleRender();
 }
@@ -8269,9 +8547,15 @@ function cancelRemoveHouseContact(){
   scheduleRender();
 }
 function confirmRemoveHouseContact(id){
-  if(!moduleEdit('directory')) return;
+  if(!canEditHouseContact(houseContacts.find(x=>x.id===id))) return;
   houseContacts = houseContacts.filter(c=>c.id!==id);
+  delete sbContactSigs[id];
   state.houseContactRemovePending = null;
+  // A true delete — sent straight away (the ordinary sync only ever upserts).
+  if(isDeviceSupabaseLive() && supabaseSession && isRealStaffId(id)){
+    sbClient.from("house_directory").delete().eq("id", id)
+      .then(({error})=>{ if(error) console.error("Supabase house number delete failed:", error); });
+  }
   scheduleRender();
 }
 function renderHouseContactAddForm(){
@@ -8290,6 +8574,9 @@ function renderHouseContactAddForm(){
     <div class="chip-row">
       ${HOUSE_CONTACT_CATEGORIES.map(c=>`<button type="button" class="chip-btn ${d.category===c.key?'active':''}" onclick="setHouseContactDraftCategory('${c.key}')">${c.label}</button>`).join("")}
     </div>
+    ${isSystemAdmin() ? `<label style="display:flex; align-items:center; gap:8px; margin-top:14px; font-size:14px; font-weight:600;">
+      <input type="checkbox" id="hc-newAll" ${d.allHouses?'checked':''} onchange="setHouseContactDraftAllHouses(this.checked)"> Show in all houses
+    </label><div class="cp-hint" style="margin:2px 0 0 26px;">Every house will see this number. Only Leadership can change or remove it.</div>` : ""}
     <div class="routine-quicklog-actions" style="margin-top:14px;">
       <button class="btn primary small" onclick="addHouseContact()">Save Number</button>
       <button class="btn small" onclick="toggleHouseContactAdd()">Cancel</button>
@@ -8316,8 +8603,9 @@ function renderHouseContactRow(c){
           <div class="hint" style="margin:2px 0 0;">${esc(c.phone)}${c.notes ? ` · ${esc(c.notes)}` : ""}</div>
         </div>
         <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
+          ${c.allHouses ? `<span class="tag">All houses</span>` : ""}
           <span class="tag">${houseContactCategoryLabel(c.category)}</span>
-          ${moduleEdit('directory') ? `<div class="routine-quicklog-actions" style="margin-top:0;">
+          ${canEditHouseContact(c) ? `<div class="routine-quicklog-actions" style="margin-top:0;">
             <button class="btn small" onclick="toggleHouseContactEdit('${c.id}')">✎ Edit</button>
             <button class="btn small" onclick="requestRemoveHouseContact('${c.id}')">Remove</button>
           </div>` : ""}
@@ -8338,6 +8626,9 @@ function renderHouseContactRow(c){
     <div class="chip-row">
       ${HOUSE_CONTACT_CATEGORIES.map(cat=>`<button type="button" class="chip-btn ${c.category===cat.key?'active':''}" onclick="setHouseContactCategory('${c.id}','${cat.key}')">${cat.label}</button>`).join("")}
     </div>
+    ${isSystemAdmin() ? `<label style="display:flex; align-items:center; gap:8px; margin-top:14px; font-size:14px; font-weight:600;">
+      <input type="checkbox" ${c.allHouses?'checked':''} onchange="setHouseContactAllHouses('${c.id}', this.checked)"> Show in all houses
+    </label>` : ""}
     <div class="routine-quicklog-actions" style="margin-top:14px;">
       <button class="btn small" onclick="toggleHouseContactEdit('${c.id}')">Done</button>
     </div>
@@ -8387,7 +8678,7 @@ function renderDirectoryNumbersSection(thisHouseContacts){
   <div class="section">
     <div class="section-head">
       <h2>House Numbers</h2>
-      <span class="hint">General numbers staff need — home health, hospice, other partners, emergency contacts, management.</span>
+      <span class="hint">General numbers staff need — home health, hospice, other partners, emergency contacts, management.${isSystemAdmin() ? " Leadership can mark a number “Show in all houses”." : ""}</span>
     </div>
     ${editable ? `<div class="card" style="padding:14px 18px; margin-bottom:14px;">
       <button class="btn primary small" onclick="toggleHouseContactAdd()">${state.houseContactAddOpen ? "Cancel" : "+ Add Number"}</button>
@@ -13327,7 +13618,7 @@ function handoverSummary(houseId, info){
   const startMs = info.start.getTime(), endMs = info.boundary.getTime();
   const inWin = iso => { const t = Date.parse(iso); return !isNaN(t) && t>=startMs && t<endMs; };
   const dateKeys = Array.from(new Set([isoDate(info.start), isoDate(info.boundary)]));
-  const label = v => String(v||"").replace(/_/g," ").replace(/^./, c=>c.toUpperCase());
+  const label = v => v==="breakdown" ? "Skin Breakdown" : String(v||"").replace(/_/g," ").replace(/^./, c=>c.toUpperCase());
   const groups = [];
   residents.filter(r=>r.house===houseId && !r.archived).forEach(r=>{
     const g = { resident:r, notes:[], careLog:[], prn:[], missed:[] };
@@ -13910,7 +14201,7 @@ function renderDailyCareDetail(){
       </div>
       ${dc.skin.unusualNoted==="yes" ? `
       <div class="dc-field"><span class="dc-label">Skin condition <span class="dc-required">*</span></span>
-        ${chipRow(r.id,"skin.status",[{value:"intact",label:"Intact"},{value:"dry",label:"Dry"},{value:"redness",label:"Redness"},{value:"bruising",label:"Bruising"},{value:"rash",label:"Rash"},{value:"swelling",label:"Swelling"},{value:"breakdown",label:"Skin Breakdown"},{value:"other",label:"Other"}],dc.skin.status,true)}
+        ${chipRow(r.id,"skin.status",[{value:"intact",label:"Intact"},{value:"dry",label:"Dry"},{value:"redness",label:"Redness"},{value:"bruising",label:"Bruising"},{value:"rash",label:"Rash"},{value:"swelling",label:"Swelling"},{value:"skin_tear",label:"Skin Tear"},{value:"pressure_sore",label:"Pressure Sore"},{value:"other",label:"Other"}],dc.skin.status,true)}
       </div>
       <div class="dc-field"><span class="dc-label">Nurse notified? <span class="dc-required">*</span></span>
         ${chipRow(r.id,"skin.nurseNotified",YN,dc.skin.nurseNotified)}
@@ -14225,7 +14516,13 @@ function applySnapshot(snap){
   if(typeof snap.dcLogEntryIdSeq === "number") dcLogEntryIdSeq = snap.dcLogEntryIdSeq;
   if(typeof snap.irIdSeq === "number") irIdSeq = snap.irIdSeq;
   if(snap.incidentReports) incidentReports = snap.incidentReports;
-  if(snap.foodPhotos) foodPhotos = snap.foodPhotos;
+  if(snap.foodPhotos){
+    foodPhotos = snap.foodPhotos;
+    // an upload that was still running when the app closed is re-added from the saved copy on this iPad (outbox)
+    Object.keys(foodPhotos).forEach(d=>Object.keys(foodPhotos[d]||{}).forEach(hid=>Object.keys(foodPhotos[d][hid]||{}).forEach(c=>{
+      const e = foodPhotos[d][hid][c]; if(e && (e.pending || e.failed)) delete foodPhotos[d][hid][c];
+    })));
+  }
   if(snap.foodPhotoConfirmed) foodPhotoConfirmed = snap.foodPhotoConfirmed;
   if(Array.isArray(snap.announcements)) announcements = snap.announcements;
   if(typeof snap.nextAnnId === "number") nextAnnId = snap.nextAnnId;
@@ -14280,7 +14577,8 @@ async function loadSnapshot(){
 let updateAvailable = false, versionCheckBusy = false;
 function appBuildFromHtml(text){ const m = /const APP_BUILD = "([^"]+)"/.exec(String(text||"")); return m ? m[1] : null; }
 async function checkForNewVersion(){
-  if(versionCheckBusy || updateAvailable || typeof fetch !== "function") return;
+  if(versionCheckBusy || typeof fetch !== "function") return;
+  if(updateAvailable && state.userId) return; // bar already showing and someone is working; once locked, check again so it can update itself
   let url; try{ url = String(location.href).split("#")[0].split("?")[0]; }catch(e){ return; }
   if(!/^https?:/.test(url)) return; // opened straight from a file — nothing to compare with
   versionCheckBusy = true;
@@ -14288,9 +14586,69 @@ async function checkForNewVersion(){
     const res = await fetch(url + "?v=" + Date.now(), { cache:"no-store" });
     if(!res || !res.ok) return;
     const latest = appBuildFromHtml(await res.text());
-    if(latest && latest !== APP_BUILD){ updateAvailable = true; showUpdateBar(); }
+    if(latest && latest !== APP_BUILD){
+      updateAvailable = true;
+      // Nobody signed in (the PIN screen is showing): nothing to lose, so update right away instead of waiting
+      // for someone to tap "Reload". Someone already working just gets the bar.
+      if(!state.userId && autoUpdateAllowed(latest) && await autoUpdateNow(latest)) return;
+      showUpdateBar();
+    }
   }catch(e){ /* offline or blocked — try again later */ }
   finally{ versionCheckBusy = false; }
+}
+// ---- automatic update before sign-in (Oct 2026) ----
+// A device that keeps getting the old page back (a stuck cache) must not reload forever: the same new version is
+// auto-reloaded at most once per 15 minutes per tab; after that the orange bar is used and sign-in is never blocked.
+const AUTO_UPDATE_KEY = "nhh_auto_update";
+function autoUpdateAllowed(latest){
+  try{
+    const v = JSON.parse(sessionStorage.getItem(AUTO_UPDATE_KEY) || "null");
+    if(v && v.build === latest && Date.now() - v.at < 15*60*1000) return false;
+    return true;
+  }catch(e){ return false; } // can't remember an attempt -> never auto-reload (no loop risk)
+}
+function markAutoUpdate(latest){
+  try{ sessionStorage.setItem(AUTO_UPDATE_KEY, JSON.stringify({ build: latest, at: Date.now() })); return true; }
+  catch(e){ return false; }
+}
+async function fetchLatestBuild(timeoutMs){
+  if(typeof fetch !== "function") return null;
+  let url; try{ url = String(location.href).split("#")[0].split("?")[0]; }catch(e){ return null; }
+  if(!/^https?:/.test(url)) return null;
+  let ctl = null, timer = null;
+  try{
+    if(typeof AbortController === "function"){ ctl = new AbortController(); timer = setTimeout(()=>ctl.abort(), timeoutMs || 3000); }
+    const res = await fetch(url + "?v=" + Date.now(), { cache:"no-store", signal: ctl ? ctl.signal : undefined });
+    if(!res || !res.ok) return null;
+    return appBuildFromHtml(await res.text());
+  }catch(e){ return null; }
+  finally{ if(timer) clearTimeout(timer); }
+}
+function showUpdatingOverlay(){
+  try{
+    let o = document.getElementById("updatingOverlay");
+    if(!o){ o = document.createElement("div"); o.id = "updatingOverlay"; document.body.appendChild(o); }
+    o.style.cssText = "position:fixed; inset:0; z-index:100000; background:#1f3556; color:#fff; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:10px; font:600 20px system-ui,sans-serif; text-align:center; padding:24px;";
+    o.innerHTML = `<div>Updating to the latest version…</div><div style="font-size:14px; font-weight:400; opacity:.85;">One moment, then enter your PIN.</div>`;
+  }catch(e){}
+}
+// Reloads onto the newest page (a fresh address so a cached old copy isn't reused). Returns true when it started.
+async function autoUpdateNow(latest){
+  let base; try{ base = String(location.href).split("#")[0].split("?")[0]; }catch(e){ return false; }
+  if(!markAutoUpdate(latest)) return false;
+  showUpdatingOverlay();
+  try{ await writeSnapshotNow(); }catch(e){}
+  try{ location.replace(base + "?nhhv=" + encodeURIComponent(latest) + "-" + Date.now()); }catch(e){ return false; }
+  return true;
+}
+// Called when a PIN has been typed, before it is checked: true means the page is updating and sign-in should stop.
+async function updateBeforeSignIn(){
+  const latest = await fetchLatestBuild(3000);
+  if(latest && latest !== APP_BUILD){
+    updateAvailable = true;
+    if(autoUpdateAllowed(latest)) return await autoUpdateNow(latest);
+  }
+  return false;
 }
 function showUpdateBar(){
   try{
@@ -14307,7 +14665,7 @@ async function reloadForNewVersion(){
 }
 try{
   if(typeof setInterval === "function") setInterval(checkForNewVersion, 5*60*1000);
-  if(typeof setTimeout === "function") setTimeout(checkForNewVersion, 4000);
+  if(typeof setTimeout === "function") setTimeout(checkForNewVersion, 0); // right away, before anyone reaches the PIN pad
   if(document && document.addEventListener) document.addEventListener("visibilitychange", ()=>{ try{ if(document.visibilityState === "visible") checkForNewVersion(); }catch(e){} });
 }catch(e){}
 
@@ -14320,6 +14678,7 @@ async function bootApp(){
     // browsers) — fall back to starting fresh rather than leaving the app stuck unrendered.
     console.error("Local load failed — starting fresh:", err);
   }
+  try{ await foodPhotoOutboxLoad(); }catch(e){} // food photos saved on this iPad that never finished uploading
   syncResidentBirthdayEvents();
   // Rebuild today's Today's Flow checkmarks from the persisted dailyTaskDone bucket (Batch F) — state.
   // checked itself is ephemeral/not snapshotted, so this has to run once explicitly on every fresh
