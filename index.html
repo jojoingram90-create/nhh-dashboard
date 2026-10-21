@@ -4576,7 +4576,7 @@ async function loadCompanyHouses(){
 // Oct 14, 2026 — version stamp, changed with every delivered file. The page re-reads index.html in the background and,
 // if a newer stamp has been published, shows a "reload" bar (see checkForNewVersion). A phone, computer or iPad that
 // has had the dashboard open for days otherwise keeps running its old copy, and an old copy can lose newer data.
-const APP_BUILD = "2026-10-21a";
+const APP_BUILD = "2026-10-21b";
 const SUPABASE_URL = "https://wxvbbclbgicemegcvvae.supabase.co";
 const SUPABASE_ANON_KEY = "sb_publishable_JC2rWmQ8WOi6-Dhnd_UAXQ_9291ibar";
 const PIN_LOGIN_URL = SUPABASE_URL + "/functions/v1/pin-login";
@@ -6797,6 +6797,38 @@ function pinDigit(d){
   }
 }
 function pinBackspace(){ pinBuffer = pinBuffer.slice(0,-1); pinError=false; render(); }
+// ---- which house is this iPad? (shown on the PIN screen, and settable there — Oct 2026) ----
+// The link is saved in this copy of the app's browser storage. Safari and a Home Screen icon can each have their own
+// storage, so each copy shows its own status here and can be linked right from this screen.
+let linkPickerOpen = false;
+function deviceLinkedHouseName(){
+  const id = getDeviceHouseId();
+  if(!id) return null;
+  return Object.keys(SUPABASE_HOUSE_IDS).find(n=>SUPABASE_HOUSE_IDS[n]===id) || null;
+}
+function openLinkPicker(){ linkPickerOpen = true; render(); }
+function closeLinkPicker(){ linkPickerOpen = false; render(); }
+function linkDeviceToHouse(name){
+  if(!SUPABASE_HOUSE_IDS[name]) return;
+  try{ localStorage.setItem("nhh_device_house_id", SUPABASE_HOUSE_IDS[name]); }catch(e){ return; }
+  linkPickerOpen = false;
+  // restart so the app starts up exactly as it does after the one-time setup web address
+  try{ location.reload(); }catch(e){ render(); }
+}
+function renderDeviceLinkStatus(){
+  const linked = deviceLinkedHouseName();
+  if(linked && !linkPickerOpen) return `<div class="lock-hint" style="margin-top:10px; font-weight:600;">🔗 Linked to ${esc(linked)}</div>`;
+  if(linkPickerOpen){
+    return `<div class="lock-hint" style="margin-top:12px; text-align:left;">
+      <div style="font-weight:700; margin-bottom:8px; text-align:center;">Which house is this iPad?</div>
+      <div style="display:flex; flex-direction:column; gap:6px;">
+        ${Object.keys(SUPABASE_HOUSE_IDS).sort().map(n=>`<button class="btn small" style="width:100%;" onclick="linkDeviceToHouse('${esc(n)}')">${esc(n)}</button>`).join("")}
+      </div>
+      <div style="margin-top:8px; text-align:center;"><a href="#" onclick="closeLinkPicker(); return false;" style="color:var(--accent);">Cancel</a></div>
+    </div>`;
+  }
+  return `<div class="lock-hint" style="margin-top:10px; color:var(--alert-text);">Not linked to a house — PINs are only checked on this device. <a href="#" onclick="openLinkPicker(); return false;" style="color:var(--accent); font-weight:700;">Link this iPad</a></div>`;
+}
 function renderLockScreen(){
   const overlay = document.getElementById("lockScreen");
   overlay.style.display = "flex";
@@ -6810,7 +6842,7 @@ function renderLockScreen(){
     <div class="lock-card">
       <div class="brand" style="justify-content:center; margin-bottom:6px;">
         <div class="brand-mark">NH</div>
-        <div class="brand-text" style="text-align:left;"><div class="top">New Horizon Homes</div><div class="sub">${houses[0] ? esc(houses[0].name) : "House Dashboard"} · House Dashboard</div></div>
+        <div class="brand-text" style="text-align:left;"><div class="top">New Horizon Homes</div><div class="sub">${deviceLinkedHouseName() ? esc(deviceLinkedHouseName()) + " · " : ""}House Dashboard</div></div>
       </div>
       <div class="lock-title">${title}</div>
       <div class="pin-dots">${dots}</div>
@@ -6818,6 +6850,7 @@ function renderLockScreen(){
         ${keys.map(k=> k==="" ? `<span></span>` : k==="⌫" ? `<button class="pin-key pin-key-del" onclick="pinBackspace()">⌫</button>` : `<button class="pin-key" onclick="pinDigit(${k})">${k}</button>`).join("")}
       </div>
       <div class="lock-hint">Locks automatically when this tab isn't active, or after ${IDLE_LOCK_MS/60000} minutes idle — so it's always clear which caregiver documented what.</div>
+      ${renderDeviceLinkStatus()}
       <div class="lock-hint" style="margin-top:8px; font-size:11px; opacity:.6;">Version ${APP_BUILD}</div>
       <div class="lock-hint" style="margin-top:14px;"><a href="#" onclick="openRemoteLogin(); return false;" style="color:var(--accent);">Sign in remotely (Leadership) →</a></div>
     </div>`;
