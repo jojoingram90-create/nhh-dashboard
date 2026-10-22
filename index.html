@@ -140,7 +140,10 @@
   @media (max-width: 900px){
     button.sidebar-toggle{ display:inline-flex; }
     #sidebar{
-      position:fixed; top:0; left:0; height:100vh; z-index:60; box-shadow:0 0 0 100vw rgba(0,0,0,0), var(--shadow);
+      position:fixed; top:0; left:0; height:100vh; height:100dvh; z-index:60; box-shadow:0 0 0 100vw rgba(0,0,0,0), var(--shadow);
+      /* The menu is longer than a phone screen (Admin has many pages) — let it scroll on its own */
+      overflow-y:auto; overflow-x:hidden; -webkit-overflow-scrolling:touch; overscroll-behavior:contain;
+      padding-bottom:calc(28px + env(safe-area-inset-bottom, 0px)); box-sizing:border-box;
       transform:translateX(-100%); transition:transform .25s ease; width:250px;
     }
     #app.sidebar-open #sidebar{ transform:translateX(0); }
@@ -3914,6 +3917,53 @@ function startIncidentReportFromDailyCare(residentId){
   state.incidentReportId = rep.id;
   render();
 }
+/* Deleting an incident report (Oct 22, per Johnna): a House Manager or Leadership can delete a report that was
+   started but never submitted for review (status "open") — e.g. a test or a report started by mistake. Once a
+   report has been submitted, sent back, approved or reviewed it can never be deleted (the database enforces this
+   too, see batch_m_incident_delete.sql). Deleting also clears the Daily Care Log's link to the report. */
+function canDeleteIncident(rep){
+  const u = currentUser();
+  return !!rep && !!u && (u.role==="manager" || u.role==="leadership") && rep.status==="open";
+}
+function irAskDelete(reportId){ state.irDeleteConfirm = reportId; state.irDeleteError = null; scheduleRender(); }
+function irCancelDelete(){ state.irDeleteConfirm = null; state.irDeleteError = null; scheduleRender(); }
+function irRemoveLocally(residentId, reportId){
+  incidentReports[residentId] = (incidentReports[residentId]||[]).filter(x=>x.id!==reportId);
+  delete sbIrSigs[reportId];
+  if(state.incidentSubmitErrors) delete state.incidentSubmitErrors[reportId];
+  Object.keys(dailyCare).forEach(day=>{ Object.keys(dailyCare[day]||{}).forEach(rid=>{
+    const dc = dailyCare[day][rid]; if(dc && dc.incident && dc.incident.reportId===reportId) dc.incident.reportId = null;
+  }); });
+}
+async function irDeleteReport(reportId){
+  const residentId = state.incidentResidentId;
+  const rep = getIR(residentId, reportId);
+  if(!rep || state.irDeleteBusy) return;
+  if(!canDeleteIncident(rep)){ state.irDeleteError = "Only a House Manager or Leadership can delete a report, and only before it has been submitted for review."; scheduleRender(); return; }
+  if(typeof rep.id === "string" && supabaseSession){
+    state.irDeleteBusy = true; state.irDeleteError = null; scheduleRender();
+    try{
+      // A Daily Care Log may point at this report; release that link first or the database refuses the delete.
+      const { error: lErr } = await sbClient.from("daily_care_logs").update({ incident_report_id: null }).eq("incident_report_id", rep.id);
+      if(lErr) throw lErr;
+      const { data, error } = await sbClient.from("incident_reports").delete().eq("id", rep.id).eq("status", "open").select("id");
+      if(error) throw error;
+      if(!data || !data.length) throw new Error("The database did not delete it — it may have already been submitted by someone else, or you may not have permission.");
+    }catch(err){
+      console.error("Incident report delete failed:", err);
+      state.irDeleteBusy = false;
+      state.irDeleteError = (err && err.message) ? err.message : "Could not delete that report.";
+      scheduleRender();
+      return;
+    }
+    state.irDeleteBusy = false;
+  }
+  irRemoveLocally(residentId, reportId);
+  state.irDeleteConfirm = null; state.irDeleteError = null;
+  state.incidentListNotice = "The incident report was deleted.";
+  state.incidentReportId = null;
+  goView("incidents");
+}
 function openIncidentReport(residentId, reportId){
   state.view = "incidentdetail";
   state.incidentResidentId = residentId;
@@ -4259,6 +4309,7 @@ function incidentReportsMaybeRefresh(force){
     incidentRefreshTimer = setInterval(()=>{ if(state.userId) incidentReportsMaybeRefresh(true); }, INCIDENT_REFRESH_MS);
   }
   incidentRefreshLoading = true; incidentRefreshAt = Date.now();
+  const knownAtStart = new Set(Object.keys(sbIrSigs)); // only reports already saved before this fetch began can count as "deleted elsewhere"
   Promise.resolve(sbClient.from("incident_reports").select("*").in("house_id", ids).order("created_at")).then(({ data, error })=>{
     incidentRefreshLoading = false;
     if(error || !Array.isArray(data)) return;
@@ -4275,6 +4326,18 @@ function incidentReportsMaybeRefresh(force){
       const dirty = sbIrSigs[cur.id] !== undefined && sbIrSig(cur) !== sbIrSigs[cur.id];
       if(open || dirty) return;
       if(sbIrSigs[cur.id] !== freshSig){ fresh.seq = cur.seq; list[idx] = fresh; sbIrSigs[cur.id] = freshSig; changed = true; }
+    });
+    // A report another device deleted: it was loaded or saved from the database here (so it has a baseline) but is
+    // no longer there. Only residents of the houses just fetched are considered.
+    const fetchedIds = new Set(data.map(r=>r && r.id));
+    residents.forEach(res=>{
+      if(!ids.includes(res.house)) return;
+      const list = incidentReports[res.id]; if(!list) return;
+      const keep = list.filter(x=> typeof x.id !== "string" || sbIrSigs[x.id] === undefined || !knownAtStart.has(String(x.id)) || fetchedIds.has(x.id));
+      if(keep.length !== list.length){
+        list.filter(x=>!keep.includes(x)).forEach(x=>{ delete sbIrSigs[x.id]; if(state.incidentReportId===x.id){ state.incidentReportId = null; if(state.view==="incidentdetail") state.view = "incidents"; } });
+        incidentReports[res.id] = keep; changed = true;
+      }
     });
     if(changed) scheduleRender();
   }).catch(()=>{ incidentRefreshLoading = false; });
@@ -4576,7 +4639,7 @@ async function loadCompanyHouses(){
 // Oct 14, 2026 — version stamp, changed with every delivered file. The page re-reads index.html in the background and,
 // if a newer stamp has been published, shows a "reload" bar (see checkForNewVersion). A phone, computer or iPad that
 // has had the dashboard open for days otherwise keeps running its old copy, and an old copy can lose newer data.
-const APP_BUILD = "2026-10-21b";
+const APP_BUILD = "2026-10-22b";
 const SUPABASE_URL = "https://wxvbbclbgicemegcvvae.supabase.co";
 const SUPABASE_ANON_KEY = "sb_publishable_JC2rWmQ8WOi6-Dhnd_UAXQ_9291ibar";
 const PIN_LOGIN_URL = SUPABASE_URL + "/functions/v1/pin-login";
@@ -4927,7 +4990,7 @@ function upsertLocalStaffRecord(u){
   const rec = {
     id: u.id, pin: null, name: u.name, role: u.role,
     label: ROLE_LABELS[u.role] || u.role, rail: ROLE_RAILS[u.role] || "var(--accent)",
-    shift: u.role==="leadership" ? "n/a" : (u.shiftDefault==="night" ? "Night" : u.shiftDefault==="day" ? "Day" : (existing && existing.shift && existing.shift!=="n/a" ? existing.shift : "Day")),
+    shift: u.role==="leadership" ? "n/a" : (u.shiftDefault==="night" ? "Night" : u.shiftDefault==="day" ? "Day" : u.shiftDefault==="both" ? "Both" : (existing && existing.shift && existing.shift!=="n/a" ? existing.shift : "Day")),
     houses: (u.houses && u.houses.length) ? u.houses : (houses[0] ? [houses[0].id] : []),
     initials: computeInitials(u.name)
   };
@@ -7524,7 +7587,9 @@ function isLastLeadership(staff){ return staff.role==="leadership" && STAFF.filt
 // uuid, set by upsertLocalStaffRecord/addStaffMember's live path) from a local-only one (id is a slug
 // minted by slugifyStaffId, e.g. "priya-manager") — only the former has any real row to write to.
 function isRealStaffId(id){ return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id||""); }
-function shiftKindForSupabase(shift){ return shift==="Night" ? "night" : shift==="Day" ? "day" : "n_a"; }
+function shiftKindForSupabase(shift){ return shift==="Night" ? "night" : shift==="Day" ? "day" : shift==="Both" ? "both" : "n_a"; }
+// A caregiver can work Day, Night, or both ("Both" is stored as shift_default = both). Shown to people as "Day & Night".
+function shiftWord(shift){ return shift==="Both" ? "Day & Night" : shift; }
 
 function toggleStaffAdd(){
   if(!isSystemAdmin()) return;
@@ -7612,6 +7677,15 @@ async function addStaffMember(){
       });
       const result = await resp.json();
       if(!resp.ok) throw new Error(result.error || "Could not add that staff member.");
+      // The create_staff function doesn't take a shift, so save the chosen Day / Night / Day & Night
+      // afterwards (not fatal — it can always be changed from the person's row).
+      let shiftSaveFailed = false;
+      if(role!=="leadership" && result.id){
+        try{
+          const { error: shErr } = await sbClient.from("users").update({ shift_default: shiftKindForSupabase(state.staffDraft.shift) }).eq("id", result.id);
+          if(shErr){ shiftSaveFailed = true; console.error("New staff shift save failed:", shErr); }
+        }catch(e){ shiftSaveFailed = true; console.error("New staff shift save failed:", e); }
+      }
       STAFF.push({
         id: result.id, pin: null, pinPlain: result.pin_warning ? null : pin, name, role, email,
         label: ROLE_LABELS[role], rail: ROLE_RAILS[role],
@@ -7622,7 +7696,7 @@ async function addStaffMember(){
       state.staffDraft = null;
       // Not fatal — the account/profile/house assignments are all good even if the starting PIN
       // didn't take (e.g. it collided with someone else's); surface it so Leadership knows to set one.
-      state.staffListNotice = result.pin_warning ? `${name} was added, but the starting PIN wasn't set: ${result.pin_warning} Set one from their row below.` : `${name} was added.`;
+      state.staffListNotice = (result.pin_warning ? `${name} was added, but the starting PIN wasn't set: ${result.pin_warning} Set one from their row below.` : `${name} was added.`) + (shiftSaveFailed ? " Their shift didn't save — set it from their row below." : "");
     } catch(err){
       console.error("create_staff failed:", err);
       state.staffAddError = (err && err.message) ? err.message : "Could not add that staff member.";
@@ -7884,6 +7958,7 @@ function renderStaffAddForm(){
         <select id="staff-newShift" onchange="setStaffDraftShift(this.value)">
           <option value="Day" ${d.shift==='Day'?'selected':''}>Day</option>
           <option value="Night" ${d.shift==='Night'?'selected':''}>Night</option>
+          <option value="Both" ${d.shift==='Both'?'selected':''}>Day &amp; Night</option>
         </select></label>` : ""}
     </div>
     <div class="cp-hint" style="margin:12px 0 6px;">House${(d.houses||[]).length>1?"s":""}${d.role==="leadership"?" (default on login — Leadership can always switch to any house)":" — tap to assign more than one for staff who float between houses"}</div>
@@ -7919,7 +7994,7 @@ function renderStaffRow(staff){
       <div style="display:flex; justify-content:space-between; gap:12px; flex-wrap:wrap; align-items:flex-start;">
         <div>
           <div style="font-weight:700;">${esc(staff.name)}${isSelf ? ` <span class="hint" style="margin:0;">(you)</span>` : ""}</div>
-          <div class="hint" style="margin:2px 0 0;">${esc(staff.label)}${staff.shift!=="n/a" ? ` · ${esc(staff.shift)} shift` : ""} · ${esc(staffAssignedHouseIds(staff).map(id=>(staffHouseOptions().find(h=>h.id===id)||{}).name).filter(Boolean).join(", ") || "—")}${staff.role==="leadership" ? " (default; can switch to any)" : ""} · ${(staff.pinPlain || staff.pin) ? `PIN ${esc(staff.pinPlain || staff.pin)}` : (isRealStaffId(staff.id) ? "PIN on file" : "No PIN set")}</div>
+          <div class="hint" style="margin:2px 0 0;">${esc(staff.label)}${staff.shift!=="n/a" ? ` · ${esc(shiftWord(staff.shift))} shift` : ""} · ${esc(staffAssignedHouseIds(staff).map(id=>(staffHouseOptions().find(h=>h.id===id)||{}).name).filter(Boolean).join(", ") || "—")}${staff.role==="leadership" ? " (default; can switch to any)" : ""} · ${(staff.pinPlain || staff.pin) ? `PIN ${esc(staff.pinPlain || staff.pin)}` : (isRealStaffId(staff.id) ? "PIN on file" : "No PIN set")}</div>
         </div>
         <div class="routine-quicklog-actions" style="margin-top:0;">
           <button class="btn small" onclick="toggleStaffEdit('${staff.id}')">✎ Edit</button>
@@ -7950,6 +8025,7 @@ function renderStaffRow(staff){
         <select onchange="setStaffShift('${staff.id}',this.value)">
           <option value="Day" ${staff.shift==='Day'?'selected':''}>Day</option>
           <option value="Night" ${staff.shift==='Night'?'selected':''}>Night</option>
+          <option value="Both" ${staff.shift==='Both'?'selected':''}>Day &amp; Night</option>
         </select></label>` : ""}
     </div>
     <div class="cp-hint" style="margin:12px 0 6px;">House${staffAssignedHouseIds(staff).length>1?"s":""}${staff.role==="leadership"?" (default on login — Leadership can always switch to any house)":" — tap to assign more than one for staff who float between houses"}</div>
@@ -9568,7 +9644,7 @@ function renderTopbar(){
   document.getElementById("topbarRight").innerHTML = `
     <div class="identity-chip">
       <span class="identity-dot" style="background:${me.rail}"></span>
-      <span>${me.name}<span class="identity-role">${me.label}${me.shift!=="n/a" ? " · "+me.shift+" shift" : ""}</span></span>
+      <span>${me.name}<span class="identity-role">${me.label}${me.shift!=="n/a" ? " · "+shiftWord(me.shift)+" shift" : ""}</span></span>
     </div>
     <button class="btn small" onclick="lockApp()">🔒 Lock</button>`;
 }
@@ -12845,6 +12921,7 @@ function renderIncidentsList(){
         <button class="btn primary small" onclick="startIncidentReport(document.getElementById('newIncidentResident').value)">+ New Incident Report</button>
       </div>
     </div>
+    ${(()=>{ const n = state.incidentListNotice; state.incidentListNotice = null; return n ? `<div class="card" style="padding:12px 16px; margin-bottom:14px; font-size:13.5px; font-weight:600;">✓ ${esc(n)}</div>` : ""; })()}
     ${rows.length===0 ? `<div class="card" style="padding:24px; text-align:center; color:var(--text-faint); font-style:italic;">No incident reports on file.</div>` : rows.map(({resident:r, rep})=>`
       <button class="card incident-row" onclick="openIncidentReport('${r.id}',${jsId(rep.id)})">
         <div class="incident-row-main">
@@ -12879,9 +12956,19 @@ function renderIncidentReportDetail(){
       <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
         ${irStatusBadge(rep.status)}
         ${canSubmit ? `<button class="btn primary small" onclick="irSubmitForReview(${jsId(id)})">📤 Submit for Review</button>` : ""}
+        ${canDeleteIncident(rep) ? `<button class="btn small" style="color:var(--alert-text);" onclick="irAskDelete(${jsId(id)})">🗑 Delete Report</button>` : ""}
         <button class="btn small" onclick="printIncidentReport('${r.id}',${jsId(id)})">🖨 Print / Save as PDF</button>
       </div>
     </div>
+    ${(state.irDeleteConfirm===id && canDeleteIncident(rep)) ? `<div class="card" style="padding:14px 18px; margin-bottom:14px; background:var(--alert-bg);">
+      <div style="font-size:14px; color:var(--alert-text); font-weight:700; margin-bottom:4px;">Delete this incident report?</div>
+      <div style="font-size:13px; color:var(--alert-text); margin-bottom:10px;">${esc(r.name)}'s report has not been submitted for review. Deleting removes it for everyone and it can't be brought back.</div>
+      ${state.irDeleteError ? `<div style="font-size:13px; color:var(--alert-text); font-weight:700; margin-bottom:10px;">${esc(state.irDeleteError)}</div>` : ""}
+      <div style="display:flex; gap:8px; flex-wrap:wrap;">
+        <button class="btn small" style="background:var(--alert-text); color:#fff; border-color:var(--alert-text);" ${state.irDeleteBusy?"disabled":""} onclick="irDeleteReport(${jsId(id)})">${state.irDeleteBusy ? "Deleting…" : "Yes, delete report"}</button>
+        <button class="btn small" ${state.irDeleteBusy?"disabled":""} onclick="irCancelDelete()">Keep it</button>
+      </div>
+    </div>` : ""}
     ${rep.status==="needs_revision" ? (rep.statements.sendBack
       ? `<div class="card" style="padding:12px 16px; margin-bottom:14px; background:var(--fall-bg);"><div style="font-size:13.5px; color:var(--fall-text); font-weight:700;">⚠ Sent back for correction by ${esc(rep.statements.sendBack.by)} — ${esc(rep.statements.sendBack.at)}</div><div style="font-size:13px; color:var(--fall-text); margin-top:4px;">${esc(rep.statements.sendBack.reason)}</div><div style="font-size:12.5px; color:var(--fall-text); margin-top:4px;">Fix the sections below, then Submit for Review again.</div></div>`
       : `<div class="card" style="padding:12px 16px; margin-bottom:14px; background:var(--fall-bg);"><div style="font-size:13.5px; color:var(--fall-text); font-weight:700;">⚠ Sent back — review the sections below, then Submit for Review again.</div></div>`) : ""}
@@ -14088,8 +14175,8 @@ function cleaningReminderApplies(rem, u){
   if(!staffHouseIds(u).includes(rem.house)) return false;
   if(u.role==="prn") return false; // Oct 8: PRN staff aren't sent reminders (they still see due cleanings on the Calendar)
   if(rem.shift==="both") return true;
-  if(rem.shift==="day") return u.shift==="Day";
-  if(rem.shift==="night") return u.shift==="Night";
+  if(rem.shift==="day") return u.shift==="Day" || u.shift==="Both";
+  if(rem.shift==="night") return u.shift==="Night" || u.shift==="Both";
   return false;
 }
 function cleaningRemindersPendingFor(u, houseId){
