@@ -34,6 +34,7 @@
     --alert-bg:#FBE3E1; --alert-text:#9A2C22; --alert-dot:#C0392B;
     --good-bg:#E1F2E8; --good-text:#256A44; --good-dot:#2E7D57;
     --diab-bg:#DDF1F1; --diab-text:#14595B; --diab-dot:#1F8A8D;
+    --mon-bg:#FFF1C9; --mon-text:#6B4E00; --mon-dot:#B88A00;
 
     --duenow-bg:#142C47; --duenow-card-bg:#FFFFFF; --duenow-text:#FFFFFF; --duenow-text-muted:#B9CBE2;
     --duenow-tag-bg:#E1EDF8; --duenow-tag-text:#1F5788;
@@ -49,7 +50,7 @@
       --hospice-bg:#2C2340; --hospice-text:#D2B9F0; --hospice-dot:#A57FD6;
       --away-bg:#152B40; --away-text:#9CC6EE; --away-dot:#5B9AD1;
       --alert-bg:#3A1D1A; --alert-text:#F2A79E; --alert-dot:#D9584B;
-      --good-bg:#16301F; --good-text:#8FD3AA; --good-dot:#49A06E; --diab-bg:#0F2F31; --diab-text:#8ADADC; --diab-dot:#3FB5B8;
+      --good-bg:#16301F; --good-text:#8FD3AA; --good-dot:#49A06E; --diab-bg:#0F2F31; --diab-text:#8ADADC; --diab-dot:#3FB5B8; --mon-bg:#3A3010; --mon-text:#F0D27A; --mon-dot:#D9B23F;
 
       --duenow-bg:#1E3350; --duenow-card-bg:#243347; --duenow-text:#E7ECF3; --duenow-text-muted:#9AACC2;
       --duenow-tag-bg:#152B40; --duenow-tag-text:#9CC6EE;
@@ -64,7 +65,7 @@
     --hospice-bg:#2C2340; --hospice-text:#D2B9F0; --hospice-dot:#A57FD6;
     --away-bg:#152B40; --away-text:#9CC6EE; --away-dot:#5B9AD1;
     --alert-bg:#3A1D1A; --alert-text:#F2A79E; --alert-dot:#D9584B;
-    --good-bg:#16301F; --good-text:#8FD3AA; --good-dot:#49A06E; --diab-bg:#0F2F31; --diab-text:#8ADADC; --diab-dot:#3FB5B8;
+    --good-bg:#16301F; --good-text:#8FD3AA; --good-dot:#49A06E; --diab-bg:#0F2F31; --diab-text:#8ADADC; --diab-dot:#3FB5B8; --mon-bg:#3A3010; --mon-text:#F0D27A; --mon-dot:#D9B23F;
 
     --duenow-bg:#1E3350; --duenow-card-bg:#243347; --duenow-text:#E7ECF3; --duenow-text-muted:#9AACC2;
     --duenow-tag-bg:#152B40; --duenow-tag-text:#9CC6EE;
@@ -217,12 +218,13 @@
   .badge.fall{ background:var(--fall-bg); color:var(--fall-text); } .badge.fall .dot{ background:var(--fall-dot); }
   .badge.hospice{ background:var(--hospice-bg); color:var(--hospice-text); } .badge.hospice .dot{ background:var(--hospice-dot); }
   .badge.away{ background:var(--away-bg); color:var(--away-text); } .badge.away .dot{ background:var(--away-dot); }
+  .badge.watch{ background:var(--mon-bg); color:var(--mon-text); } .badge.watch .dot{ background:var(--mon-dot); }
   .badge.alert{ background:var(--alert-bg); color:var(--alert-text); } .badge.alert .dot{ background:var(--alert-dot); }
   .badge.good{ background:var(--good-bg); color:var(--good-text); } .badge.good .dot{ background:var(--good-dot); }
   .badge.diabetic{ background:var(--diab-bg); color:var(--diab-text); } .badge.diabetic .dot{ background:var(--diab-dot); }
 
   /* stat strip */
-  .stat-strip{ display:grid; grid-template-columns:repeat(4,1fr); gap:12px; }
+  .stat-strip{ display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:12px; }
   .stat-tile{ padding:14px 16px; transition:box-shadow .15s ease, transform .15s ease; }
   .stat-tile:hover{ box-shadow:0 4px 14px rgba(0,0,0,.08); transform:translateY(-1px); }
   .stat-tile .n{ font-size:24px; font-weight:800; font-variant-numeric:tabular-nums; }
@@ -413,7 +415,47 @@
   /* Blocks every control in a past day's Daily Care Log from being clicked/typed into, without having
      to individually disable dozens of chip/input/button call sites — a past day is meant to be read
      exactly as it was written, never edited after the fact. */
+
+
+  .photo-save-prompt{ display:flex; flex-direction:column; gap:4px; align-items:flex-start; margin-top:4px; }
+  .photo-save-x{ background:none; border:none; color:var(--text-faint); font-size:12px; text-decoration:underline; padding:2px 0; }
+  .photo-saveall{ margin-top:10px; }
+  /* Dashboard modules */
+  .dash-mods{ display:flex; flex-direction:column; gap:10px; }
+  .dash-mod{ padding:0; overflow:hidden; }
+  .dash-mod-head{ display:flex; align-items:center; gap:10px; width:100%; padding:14px 16px; background:none; border:none; text-align:left; font-weight:700; font-size:14.5px; color:var(--text); }
+  .dash-mod-head .ic{ width:22px; text-align:center; font-size:17px; }
+  .dash-mod-head .t{ flex:1; }
+  .dash-mod-head .s{ font-size:12.5px; font-weight:700; color:var(--accent-soft-text); background:var(--accent-soft); padding:3px 10px; border-radius:99px; }
+  .dash-mod-head .car{ color:var(--text-faint); font-size:12px; }
+  .dash-mod-body{ padding:2px 16px 16px; border-top:1px solid var(--border); padding-top:12px; }
+  .dash-res-count{ background:none; border:none; padding:0; cursor:pointer; text-decoration:underline; text-underline-offset:3px; color:var(--text-faint); font:inherit; }
+  .water-cell{ flex:1; min-width:150px; }
+  .water-bar{ height:10px; border-radius:99px; background:var(--surface-alt); border:1px solid var(--border); overflow:hidden; }
+  .water-bar > i{ display:block; height:100%; background:var(--away-dot); border-radius:99px; }
+  .water-bar.done > i{ background:var(--good-dot); }
+  .water-num{ font-size:12.5px; color:var(--text-muted); margin-top:3px; font-variant-numeric:tabular-nums; }
+  .mon-box{ margin:8px 0 12px; }
+  .mon-box.on{ background:var(--mon-bg); color:var(--mon-text); border-radius:10px; padding:10px 14px; }
+  .mon-box .mon-tag{ font-size:12px; font-weight:700; letter-spacing:.03em; text-transform:uppercase; }
+  .mon-box .mon-sub{ font-size:12.5px; opacity:.85; margin:3px 0 6px; }
+  .mon-row{ display:block; width:100%; text-align:left; margin-top:6px; padding:8px 10px; border-radius:8px; border:1px solid var(--border); background:var(--surface); color:var(--text); font-size:13.5px; }
+  .mon-row .sec{ font-weight:700; }
+  .dash-count-link{ background:none; border:none; cursor:pointer; font-size:13px; color:var(--accent); font-weight:600; padding:4px 0; }
+  .mod-switches{ display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin-top:10px; }
+  .dash-meal-row{ display:flex; align-items:center; justify-content:space-between; gap:10px 14px; flex-wrap:wrap; padding:10px 0; border-bottom:1px solid var(--border); }
+  .dash-meal-row:last-child{ border-bottom:none; }
+  .dash-meal-row .who{ display:flex; flex-direction:column; min-width:130px; }
+  .dash-meal-row .nm{ font-weight:700; font-size:14px; }
+  .dash-meal-row .rm{ font-size:12px; color:var(--text-faint); }
+  .dash-res-grid{ display:grid; grid-template-columns:repeat(auto-fill,minmax(150px,1fr)); gap:8px; }
+  .dash-res-grid .chip-btn{ text-align:left; padding:10px 12px; }
+  @media (max-width:700px){ .dash-meal-row .chip-row{ width:100%; } .dash-meal-row .chip-btn{ flex:1 1 30%; padding:10px 6px; } }
   .dc-readonly{ pointer-events:none; opacity:.68; }
+  .dc-section{ scroll-margin-top:72px; }
+  .dc-sec-flash{ animation:dcSecFlash 2.4s ease; }
+  @keyframes dcSecFlash{ 0%,60%{ box-shadow:0 0 0 3px var(--accent); } 100%{ box-shadow:0 0 0 0 transparent; } }
+  @media (prefers-reduced-motion: reduce){ .dc-sec-flash{ animation:none; outline:3px solid var(--accent); } }
   /* Care Log "Save Update" banner — stays in view just under the top bar while scrolling (--topbar-h is measured at render). */
   .dc-savebar{ position:sticky; top:var(--topbar-h, 58px); z-index:4; display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap;
     background:var(--surface); border:1px solid var(--border); border-radius:10px; padding:8px 14px; margin:0 0 14px; box-shadow:0 3px 10px rgba(0,0,0,.10); }
@@ -2307,6 +2349,7 @@ function defaultDailyCare(){
     elimination:{ bm:null, bmTime:"", unusualNoted:null, unusualType:[], bowelIssue:null, bowelIssueOther:"", urinationIssue:null, urinationIssueOther:"", nurseNotified:null, nurseNotifiedTime:"", comments:"" },
     incident:{ occurred:null, reportId:null },
     general:{ overall:null, alertness:null, notes:"" },
+    notes:{}, // a free-text note per Care Log section (meals, prn, missed, vitals, skin, incident) — saved inside section_meta._notes
     signoff:{ signedBy:null, signedRole:null, signedAt:null },
     meta:{}, // per-section { by, initials, at } — who last touched each section, and when
     log:[]
@@ -2326,7 +2369,9 @@ function getDC(residentId, dateKey){
   const key = dateKey || state.dcViewDate || todayIso();
   if(!dailyCare[key]) dailyCare[key] = {};
   if(!dailyCare[key][residentId]) dailyCare[key][residentId] = defaultDailyCare();
-  return dailyCare[key][residentId];
+  const rec = dailyCare[key][residentId];
+  if(!rec.notes) rec.notes = {};
+  return rec;
 }
 function getPath(obj,path){ return path.split(".").reduce((o,k)=> (o==null ? o : o[k]), obj); }
 function setPath(obj,path,value){ const parts=path.split("."); let cur=obj; for(let i=0;i<parts.length-1;i++){ cur = cur[parts[i]]; } cur[parts[parts.length-1]] = value; }
@@ -2340,7 +2385,8 @@ const DC_TEXT_FIELDS = {
   "bmTime":"elimination.bmTime", "eliminationComments":"elimination.comments",
   "bowelIssueOther":"elimination.bowelIssueOther", "urinationIssueOther":"elimination.urinationIssueOther",
   "eliminationNurseNotifiedTime":"elimination.nurseNotifiedTime",
-  "generalNotes":"general.notes"
+  "generalNotes":"general.notes",
+  "notesMeals":"notes.meals", "notesPrn":"notes.prn", "notesMissed":"notes.missed", "notesVitals":"notes.vitals", "notesSkin":"notes.skin", "notesIncident":"notes.incident", "notesWater":"notes.water"
 };
 function syncFormToState(residentId){
   const dc = getDC(residentId);
@@ -2399,6 +2445,7 @@ function setMedStatus(residentId, medId, anchor, status, reason){
   dc.medications[key] = { status, reason: reason||"", by: who.name, byId: who.id, initials: who.initials, at: "Just now", atIso: new Date().toISOString(),
     medName: medDef ? medDef.name : ((existing && existing.medName) || ""), dosage: medDef ? (medDef.dosage||"") : ((existing && existing.dosage) || ""), corrections };
   touchSection(dc, "medications", currentUser());
+  try{ syncRefusalToMissedLog(residentId, medId, anchor, status, reason); }catch(e){ console.error("Refusal -> Missed Medication log failed:", e); }
 }
 function dcSet(residentId, path, value){
   syncFormToState(residentId);
@@ -4387,6 +4434,70 @@ function setPhotoDate(value){
   state.photoDate = value;
   render();
 }
+// ---- Save food photos to the iPad (Oct 25, 2026, per Johnna) ----
+// A web app can't write into the Photos app silently, so this opens the iPad's Share sheet with the photo(s); one tap on
+// "Save Image" (or "Save 3 Images") puts them in Photos. Where sharing isn't available the files download instead.
+// After each new photo is captured, that photo carries a "Save to iPad" button until it is used or dismissed.
+const foodPhotoBlobCache = {};
+function foodPhotoSaveKey(houseId, date, cat){ return houseId + "|" + date + "|" + cat; }
+function foodPhotoBlobNow(entry){
+  if(!entry || !entry.img) return null;
+  if(entry.img.indexOf("data:") === 0){ try{ return dataUrlToBlob(entry.img); }catch(e){ return null; } }
+  return foodPhotoBlobCache[entry.img] || null;
+}
+async function foodPhotoBlobFor(entry){
+  const now = foodPhotoBlobNow(entry);
+  if(now || !entry || !entry.img) return now;
+  const resp = await fetch(entry.img);
+  const blob = await resp.blob();
+  foodPhotoBlobCache[entry.img] = blob;
+  return blob;
+}
+function prefetchFoodPhotoBlobs(){
+  try{
+    Object.keys((foodPhotos[state.photoDate]||{})).forEach(hid=>{
+      const day = foodPhotos[state.photoDate][hid] || {};
+      MEAL_CATS.forEach(c=>{ const e = day[c]; if(e && e.img && e.img.indexOf("data:") !== 0 && !foodPhotoBlobCache[e.img]) foodPhotoBlobFor(e).catch(()=>{}); });
+    });
+  }catch(e){}
+}
+function dismissPhotoSavePrompt(houseId, date, cat){
+  if(state.photoSavePrompt) delete state.photoSavePrompt[foodPhotoSaveKey(houseId, date, cat)];
+  scheduleRender();
+}
+async function saveFoodPhotosToDevice(houseId, date, cats){
+  const dayData = (foodPhotos[date] || {})[houseId] || {};
+  const houseName = ((houses.find(h=>h.id===houseId) || {}).name || "House").replace(/\s+/g, "");
+  const picked = (cats && cats.length ? cats : MEAL_CATS).filter(c=>dayData[c] && dayData[c].img);
+  if(!picked.length){ state.photoSaveNote = "There is no photo to save yet."; scheduleRender(); return; }
+  const toFile = (entry, cat, blob)=>{
+    const type = (blob && blob.type) || "image/jpeg";
+    const ext = (type.split("/")[1] || "jpeg").replace("jpeg", "jpg");
+    return new File([blob], `${houseName}-${date}-${CAT_META[cat].label}.${ext}`, { type });
+  };
+  let files = [];
+  const quick = picked.map(c=>foodPhotoBlobNow(dayData[c]));
+  if(quick.every(Boolean)){ files = picked.map((c, i)=>toFile(dayData[c], c, quick[i])); }
+  else{
+    for(const c of picked){ try{ const b = await foodPhotoBlobFor(dayData[c]); if(b) files.push(toFile(dayData[c], c, b)); }catch(e){} }
+  }
+  if(!files.length){ state.photoSaveNote = "Could not read the photo(s) to save. Check the connection and try again."; scheduleRender(); return; }
+  picked.forEach(c=>{ if(state.photoSavePrompt) delete state.photoSavePrompt[foodPhotoSaveKey(houseId, date, c)]; });
+  try{
+    if(typeof navigator !== "undefined" && navigator.canShare && navigator.canShare({ files })){
+      await navigator.share({ files, title: `${houseName} food photos ${date}` });
+      scheduleRender();
+      return;
+    }
+  }catch(e){
+    if(e && e.name === "AbortError"){ scheduleRender(); return; } // closed the Share sheet
+  }
+  files.forEach(f=>{
+    try{ const a = document.createElement("a"); a.href = URL.createObjectURL(f); a.download = f.name; document.body.appendChild(a); a.click(); a.remove(); setTimeout(()=>URL.revokeObjectURL(a.href), 5000); }catch(e){}
+  });
+  state.photoSaveNote = files.length === 1 ? "The photo was downloaded to this device." : `${files.length} photos were downloaded to this device.`;
+  scheduleRender();
+}
 function handlePhotoUpload(evt, houseId, cat){
   endPhotoPick(); // the camera is done — normal locking resumes
   const file = evt.target.files[0];
@@ -4400,6 +4511,7 @@ function handlePhotoUpload(evt, houseId, cat){
   const willSync = !!supabaseSession;
   const entry = { by: currentUser().name, at:"Just now", img: prev && prev.img || null, pending: willSync, saved: false };
   foodPhotos[date][houseId][cat] = entry;
+  state.photoSavePrompt = state.photoSavePrompt || {}; state.photoSavePrompt[foodPhotoSaveKey(houseId, date, cat)] = true; // offer "Save to iPad" for this photo
   scheduleRender();
   // 1) shrink it, 2) keep a copy on this iPad (survives a crash or reopen), 3) upload it. The result is shown on
   // the photo (Saved on this iPad / Posted / Upload failed) instead of being logged and forgotten.
@@ -4476,6 +4588,8 @@ function renderHousePhotoCard(h){
     }
     // else: another house, nothing uploaded yet — just the placeholder.
 
+    const savePrompt = (entry && entry.img && state.photoSavePrompt && state.photoSavePrompt[foodPhotoSaveKey(h.id, state.photoDate, c)])
+      ? `<div class="photo-save-prompt"><button type="button" class="btn small primary" onclick="saveFoodPhotosToDevice('${h.id}','${state.photoDate}',['${c}'])">💾 Save to this iPad</button><button type="button" class="photo-save-x" aria-label="Not now" onclick="dismissPhotoSavePrompt('${h.id}','${state.photoDate}','${c}')">Not now</button></div>` : "";
     const inputId = `photo-${h.id}-${c}-${state.photoDate}`;
     const uploadControl = (canUploadHere && !locked) ? `
       <label class="btn small" for="${inputId}" onclick="beginPhotoPick()">${entry?"Replace":"Upload"}</label>
@@ -4485,15 +4599,19 @@ function renderHousePhotoCard(h){
       <div style="font-weight:700; font-size:13px;">${meta.label}</div>
       ${statusBadge}
       ${attribution}
+      ${savePrompt}
       ${uploadControl}
     </div>`;
   }).join("");
+  const photoCount = MEAL_CATS.filter(c=>dayData[c] && dayData[c].img).length;
+  const saveAll = photoCount ? `<div class="photo-saveall"><button type="button" class="btn small" onclick="saveFoodPhotosToDevice('${h.id}','${state.photoDate}')">💾 Save ${photoCount === 3 ? "all 3" : photoCount} to this iPad</button></div>` : "";
 
   return `<div class="card house-photo-card${canUploadHere ? ' house-photo-card--mine' : ''}">
     <div class="house-photo-head">
       <h3 style="font-size:14px;">${h.name}${canUploadHere ? ' <span class="shift-tag" style="margin-left:6px;">Your house — uploading</span>' : ''}</h3>
     </div>
     <div class="photo-grid">${slots}</div>
+    ${saveAll}
   </div>`;
 }
 function renderFoodPhotos(){
@@ -4506,8 +4624,10 @@ function renderFoodPhotos(){
   const mineCard = mine ? renderHousePhotoCard(mine) : "";
   const otherCards = others.map(renderHousePhotoCard).join("");
 
+  const saveNote = state.photoSaveNote; state.photoSaveNote = null;
   document.getElementById("content").innerHTML = `
   <div class="section">
+    ${saveNote ? `<div class="card" style="padding:10px 14px; margin-bottom:12px; font-size:13.5px; font-weight:600;">${esc(saveNote)}</div>` : ""}
     <div class="section-head">
       <h2>Food Photo Quality Control</h2>
       <div class="date-nav">
@@ -4523,6 +4643,7 @@ function renderFoodPhotos(){
       ${otherCards}
     </div>
   </div>`;
+  setTimeout(prefetchFoodPhotoBlobs, 0);
 }
 
 /* ---------------- Shift announcements ---------------- */
@@ -4639,7 +4760,7 @@ async function loadCompanyHouses(){
 // Oct 14, 2026 — version stamp, changed with every delivered file. The page re-reads index.html in the background and,
 // if a newer stamp has been published, shows a "reload" bar (see checkForNewVersion). A phone, computer or iPad that
 // has had the dashboard open for days otherwise keeps running its old copy, and an old copy can lose newer data.
-const APP_BUILD = "2026-10-22b";
+const APP_BUILD = "2026-10-25d";
 const SUPABASE_URL = "https://wxvbbclbgicemegcvvae.supabase.co";
 const SUPABASE_ANON_KEY = "sb_publishable_JC2rWmQ8WOi6-Dhnd_UAXQ_9291ibar";
 const PIN_LOGIN_URL = SUPABASE_URL + "/functions/v1/pin-login";
@@ -5581,7 +5702,7 @@ function dailyCareLogRowForSupabase(residentId, houseId, dateIso, dc){
     overall_condition: dc.general.overall ? (OVERALL_CONDITION_TO_DB[dc.general.overall] || null) : null,
     alertness: dc.general.alertness ? (ALERTNESS_TO_DB[dc.general.alertness] || null) : null,
     general_notes: dc.general.notes || null,
-    section_meta: dc.meta || {},
+    section_meta: Object.assign({}, dc.meta || {}, { _notes: dc.notes || {} }),
     signed_off_by: dc.signoff.signedById || null,
     signed_off_at: dc.signoff.signedById ? new Date().toISOString() : null
   };
@@ -5618,7 +5739,8 @@ function dailyCareLogRowFromSupabase(row){
       signedRole: row.signed_off_by ? (ROLE_LABELS[(STAFF.find(s=>s.id===row.signed_off_by)||{}).role] || "") : null,
       signedAt: row.signed_off_at ? formatEventTimestamp(row.signed_off_at) : null
     },
-    meta: row.section_meta || {},
+    meta: (()=>{ const m = Object.assign({}, row.section_meta || {}); delete m._notes; return m; })(),
+    notes: (row.section_meta && row.section_meta._notes) || {},
     log: [] // filled in separately from daily_care_log_updates — see loadHouseDataFromSupabase
   };
 }
@@ -6024,6 +6146,7 @@ async function loadHouseDataFromSupabase(houseId){
     calendarEvents[day].push(event);
   });
   await loadCleaningFromSupabase(houseId); // Batch L items 100/101
+  await loadStep3FromSupabase(houseId, (residentRows||[]).map(r=>r.id)); // water, actively monitor, module switches
 
   // House Numbers (Directory): this house's own numbers plus every all-houses number. Numbers typed on this
   // device before they were saved to the database (non-UUID ids) are kept and uploaded by the next sync.
@@ -6179,6 +6302,8 @@ async function loadHouseDataFromSupabase(houseId){
         awayReturn: r.out_of_building_expected_return ? String(r.out_of_building_expected_return).slice(0,10) : null
       },
       note: r.general_notes || "",
+      awayReason: r.out_of_building ? (r.out_of_building_reason || null) : null,
+      awayReturn: (r.out_of_building && r.out_of_building_expected_return) ? String(r.out_of_building_expected_return).slice(0,10) : null,
       archived: r.status === "discharged" || r.status === "deceased",
       archiveKind: (r.status === "discharged" || r.status === "deceased") ? r.status : undefined,
       archiveDate: (r.status === "discharged" || r.status === "deceased") ? String(r.discharged_or_deceased_at || "").slice(0,10) : undefined,
@@ -6335,8 +6460,8 @@ function sbResidentRow(r, houseId, userId){
     id: r.id, house_id: houseId, full_name: r.name, room_number: r.room || null,
     dob: r.dob || null, admission_date: r.admitted || null,
     fall_risk: !!r.flags.fall, hospice: !!r.flags.hospice,
-    out_of_building: !!r.flags.away, out_of_building_reason: r.flags.awayReason || null,
-    out_of_building_expected_return: r.flags.awayReturn || null,
+    out_of_building: !!r.flags.away, out_of_building_reason: r.flags.away ? (r.awayReason || r.flags.awayReason || null) : null,
+    out_of_building_expected_return: r.flags.away ? (r.awayReturn || r.flags.awayReturn || null) : null,
     general_notes: r.note || null, updated_by: userId,
     ...(residentFlagColumnsLive ? { diabetic: !!r.flags.diabetic, no_home_health: !!r.flags.noHomeHealth, declining: !!r.flags.declining } : {})
   };
@@ -6502,6 +6627,7 @@ async function syncLiveHouseToSupabase(){
           const { error: mErr } = await sbClient.from("missed_medication_logs").upsert(missedMedLogRowForSupabase(r.id, e), { onConflict: "id" });
           if(mErr){ noteCareLogTableError(mErr); console.error("Supabase missed medication log sync failed:", mErr); } else { e.synced = true; }
         }
+        try{ await flushAwayPending(); await flushHouseModules(); await flushStep3Resident(r.id); }catch(e){ console.warn("Water / monitoring sync failed:", e); }
         const rReports = (incidentReports[r.id]||[]).filter(rep=>typeof rep.id === "string");
         for(const rep of rReports){
           const irSig = sbIrSig(rep);
@@ -7147,6 +7273,7 @@ const state = { house:"boca-bay", userId:null, view:"dashboard", residentId:null
 
 const NAV = [
   {id:"dashboard", label:"Dashboard", icon:"◧"},
+  {id:"todaysflow", label:"Today's Flow", icon:"☰"},
   {id:"residents", label:"Residents", icon:"◍"},
   {id:"dailycare", label:"Care Log", icon:"✎"},
   {id:"passedmeds", label:"Passed Medications", icon:"✚"},
@@ -8248,6 +8375,7 @@ function renderHouseRow(h){
         <div>
           <div style="font-weight:700;">${esc(h.name)}${h.id===state.house ? ` <span class="hint" style="margin:0;">(currently viewing)</span>` : ""}</div>
           <div class="hint" style="margin:2px 0 0;">${h.address ? esc(h.address) : "No address on file"} · ${residentCount} resident${residentCount===1?"":"s"} · ${staffCount} staff assigned</div>
+          ${houseModulesHtml(h)}
         </div>
         <div class="routine-quicklog-actions" style="margin-top:0;">
           <button class="btn small" onclick="toggleHouseEdit('${h.id}')">✎ Edit</button>
@@ -8411,8 +8539,11 @@ function setResidentFlag(residentId, flagKey, value){
 // "Update Resident Status" (Residents page, Sept 2026) — a quick way to flag a resident as hospitalized
 // or otherwise out of the building without opening their profile, and to bring them back. This is the
 // first real UI for r.flags.away/awayReason/awayReturn; previously nothing in the app ever set them.
+// Oct 25, 2026 (Johnna): any staff who documents care — caregiver, PRN, manager, leadership — can mark a resident
+// In Hospital / Out of Building and bring them back. Everything else on a resident stays Manager/Leadership.
+function canUpdateResidentStatus(){ const u = currentUser(); return !!u && ["manager","caregiver","leadership","prn"].includes(u.role); }
 function toggleResidentStatusOpen(){
-  if(!moduleEdit('residents')) return;
+  if(!canUpdateResidentStatus()) return;
   state.residentStatusOpen = !state.residentStatusOpen;
   if(state.residentStatusOpen){
     const list = houseResidents();
@@ -8428,7 +8559,7 @@ function setResidentStatusDraftField(key, value){
   scheduleRender();
 }
 function applyResidentStatusUpdate(){
-  if(!moduleEdit('residents') || !state.residentStatusDraft) return;
+  if(!canUpdateResidentStatus() || !state.residentStatusDraft) return;
   const { residentId, status, returnDate } = state.residentStatusDraft;
   const r = residents.find(x=>x.id===residentId);
   if(!r) return;
@@ -8443,8 +8574,28 @@ function applyResidentStatusUpdate(){
   }
   state.residentStatusOpen = false;
   state.residentStatusDraft = null;
+  r.awayPending = true;
+  state.residentStatusNote = "";
   writeSnapshotNow();
   scheduleRender();
+  flushAwayPending().then(()=>scheduleRender(), e=>console.warn("Resident status sync failed:", e));
+}
+// The status is sent through set_resident_away (batch_o_resident_away.sql), which lets any staff who documents care change
+// ONLY the three out-of-building fields for a resident in their own house. A failure keeps the change on this device and retries.
+async function flushAwayPending(){
+  if(!supabaseSession) return;
+  for(const r of residents.filter(x=>x.awayPending && isRealStaffId(x.id))){
+    const away = !!r.flags.away;
+    let res;
+    try{ res = await sbClient.rpc("set_resident_away", { p_resident_id:r.id, p_away:away, p_reason:away ? (r.awayReason||null) : null, p_return:(away && r.awayReturn) ? r.awayReturn : null }); }
+    catch(e){ res = { error:{ message:String(e && e.message || e) } }; }
+    if(res && res.error){
+      console.error("Supabase resident status update failed:", res.error);
+      state.residentStatusNote = /could not find the function|does not exist|schema cache/i.test(res.error.message||"")
+        ? "The status is changed on this device, but the database update for it hasn't been run yet, so other devices won't see it."
+        : "The status is changed on this device but didn't reach the database yet — it will try again shortly.";
+    } else { r.awayPending = false; state.residentStatusNote = ""; }
+  }
 }
 function renderResidentStatusPanel(){
   const list = houseResidents();
@@ -9361,6 +9512,7 @@ function residentFlagLabels(r){
   if(isNewResident(r)) out.push("New resident");
   residentCustomFlagDefs(r).forEach(f=>out.push(escFlagText(f.name)));
   if(r.flags.away) out.push("Out of building");
+  if(activeMonitors(r.id).length) out.push("Actively monitored");
   return out;
 }
 function residentBadges(r){
@@ -9369,6 +9521,7 @@ function residentBadges(r){
   if(isNewResident(r)) out+=badge("good","New resident");
   residentCustomFlagDefs(r).forEach(f=>{ out+=badge("neutral", escFlagText(f.name)); });
   if(r.flags.away) out+=badge("away", r.awayReason || "Out of building");
+  if(activeMonitors(r.id).length) out+=badge("watch","Actively monitored");
   if(!out) out=badge("good","No active alerts");
   return out;
 }
@@ -9381,6 +9534,7 @@ function toggleDashboardStatFilter(key){
   scheduleRender();
 }
 function renderDashboardStatList(key){
+  if(key==="monitored") return `<div class="stat-detail-list">${monitoringListHtml(houseResidents())}</div>`;
   const labels = { fall:"Fall risk", hospice:"Hospice", away:"Out of building" };
   const list = houseResidents().filter(r=>r.flags[key]);
   return `<div class="stat-detail-list">
@@ -9637,7 +9791,7 @@ function closeSidebar(){
 }
 
 function renderTopbar(){
-  const titles={dashboard:"Dashboard", residents:"Residents", calendar:"Calendar", cleaning:"Cleaning", visitors:"Visitor Check-In", menu:"Food Menu", showers:"Shower Schedule", resident:"Resident Profile", foodphotos:"Food Photo Quality Control", dailycare:"Care Log", dailycaredetail:"Care Log", passedmeds:"Passed Medications", incidents:"Incident Reports", incidentdetail:"Incident Report", approvals:"Pending Approvals", staff:"Manage Staff", houses:"Manage Houses", manageresidents:"Manage Residents", archivedresidents:"Archived Residents", directory:"Directory", supplies:"Supplies Received"};
+  const titles={dashboard:"Dashboard", todaysflow:"Today's Flow", residents:"Residents", calendar:"Calendar", cleaning:"Cleaning", visitors:"Visitor Check-In", menu:"Food Menu", showers:"Shower Schedule", resident:"Resident Profile", foodphotos:"Food Photo Quality Control", dailycare:"Care Log", dailycaredetail:"Care Log", passedmeds:"Passed Medications", incidents:"Incident Reports", incidentdetail:"Incident Report", approvals:"Pending Approvals", staff:"Manage Staff", houses:"Manage Houses", manageresidents:"Manage Residents", archivedresidents:"Archived Residents", directory:"Directory", supplies:"Supplies Received"};
   document.getElementById("viewTitle").textContent = titles[state.view] || "Dashboard";
   document.getElementById("viewDate").textContent = (state.view==="foodphotos" || state.view==="staff" || state.view==="houses") ? `All houses · ${TODAY}` : `${houses.find(h=>h.id===state.house).name} · ${TODAY}`;
   const me = currentUser();
@@ -9813,7 +9967,7 @@ let dueNowHourKey = null;
 let dueNowHourTimer = null;
 function dueNowHourWatch(){
   const key = TODAY_ISO + "@" + nowRef().getHours();
-  if(dueNowHourKey !== null && key !== dueNowHourKey && state.userId && state.view==="dashboard") scheduleRender();
+  if(dueNowHourKey !== null && key !== dueNowHourKey && state.userId && (state.view==="dashboard" || state.view==="todaysflow")) scheduleRender();
   dueNowHourKey = key;
 }
 if(typeof setInterval === "function" && !dueNowHourTimer){
@@ -10027,6 +10181,8 @@ function renderLeadershipPhoneHome(){
   const vis = phoneVisitorsInNow();
   const parts = approvalsQueueParts();
   const fall = list.filter(r=>r.flags.fall).length, hospice = list.filter(r=>r.flags.hospice).length;
+  const monitored = list.filter(r=>activeMonitors(r.id).length);
+  const monNames = monitored.slice(0,2).map(r=>escFlagText((r.name || "").split(" ")[0])).join(", ") + (monitored.length > 2 ? " +" + (monitored.length - 2) : "");
   const awayNames = away.slice(0,2).map(r=>escFlagText((r.name || "").split(" ")[0])).join(", ") + (away.length > 2 ? " +" + (away.length - 2) : "");
   const shortcuts = [
     ["residents","👥","Residents",0], ["dailycare","✎","Care Log",0], ["visitors","☑","Visitor Check-In",0],
@@ -10044,6 +10200,7 @@ function renderLeadershipPhoneHome(){
       ${phoneTile(pending ? "attn" : "calm", pending, "Waiting for approval", pending ? "Tap to review" : "All clear", "goView('approvals')")}
       ${phoneTile(overdue ? "attn" : "calm", overdue, "Overdue meds and tasks", dn.length ? `${dn.filter(c=>c.done).length} of ${dn.length} done this hour` : "Nothing due this hour", "openFullHouseDashboard()")}
       ${phoneTile("info", away.length, "Out of building", away.length ? awayNames : "Everyone is in", "openFullHouseDashboard('away')")}
+      ${dashboardModuleOn("monitoring") ? phoneTile(monitored.length ? "attn" : "calm", monitored.length, "Actively monitored", monitored.length ? monNames : "No one right now", "openFullHouseDashboard('monitored')") : ""}
       ${phoneTile("info", vis ? vis.here : "–", "Visitors in the house", vis ? (vis.all !== vis.here ? `${vis.all} across all houses` : "Signed in now") : "Open Visitor Check-In", "goView('visitors')")}
       ${phoneTile(incidents ? "attn" : "calm", incidents, "Incident reports waiting on you", incidents ? "Tap to open" : "None waiting", "goView('incidents')")}
       ${phoneTile("", list.length, "Residents", `${fall} fall risk · ${hospice} hospice`, "goView('residents')")}
@@ -10089,31 +10246,121 @@ function renderDashboard(){
   const fallCount = list.filter(r=>r.flags.fall).length;
   const hospiceCount = list.filter(r=>r.flags.hospice).length;
   const awayCount = list.filter(r=>r.flags.away).length;
+  const monitoredCount = list.filter(r=>activeMonitors(r.id).length).length;
 
   let html = `
   ${(phoneLeadershipUi() && state.phoneFullDashboard) ? `<button type="button" class="btn small" style="margin-bottom:12px;" onclick="goPhoneHome()">← Phone home</button>` : ""}
-  ${renderDueNowBanner()}
-  ${renderIncidentAckCard()}
-
   <div class="section">
-    <div class="section-head"><h2>Resident Quick View</h2><span class="hint">See the Residents page for full profiles</span></div>
+    <div class="section-head"><h2>Resident Quick View</h2><button type="button" class="hint dash-count-link" onclick="goView('residents')">${list.length} resident${list.length===1?"":"s"} — see full profiles ›</button></div>
     <div class="stat-strip">
-      <button type="button" class="card stat-tile" style="text-align:left;" onclick="goView('residents')"><div class="n tabular">${list.length}</div><div class="l">Residents</div></button>
       <button type="button" class="card stat-tile" style="text-align:left;" onclick="toggleDashboardStatFilter('fall')"><div class="n tabular" style="color:var(--fall-dot)">${fallCount}</div><div class="l">Fall risk</div></button>
       <button type="button" class="card stat-tile" style="text-align:left;" onclick="toggleDashboardStatFilter('hospice')"><div class="n tabular" style="color:var(--hospice-dot)">${hospiceCount}</div><div class="l">Hospice</div></button>
       <button type="button" class="card stat-tile" style="text-align:left;" onclick="toggleDashboardStatFilter('away')"><div class="n tabular" style="color:var(--away-dot)">${awayCount}</div><div class="l">Out of building</div></button>
+      ${dashboardModuleOn("monitoring") ? `<button type="button" class="card stat-tile stat-tile-mon" style="text-align:left;" onclick="toggleDashboardStatFilter('monitored')"><div class="n tabular" style="color:var(--mon-dot)">${monitoredCount}</div><div class="l">Actively monitored</div></button>` : ""}
     </div>
     ${state.dashboardStatFilter ? renderDashboardStatList(state.dashboardStatFilter) : ""}
   </div>
 
+  ${renderIncidentAckCard()}
+
   ${renderShiftFeed()}
 
-  ${renderTodayEvents()}
+  ${renderDueNowBanner()}
 
-  <div class="section">
-    ${renderTodaysFlow()}
-  </div>`;
+  ${renderDashboardModules()}
+
+  ${renderTodayEvents()}`;
   document.getElementById("content").innerHTML = html;
+}
+
+/* ---------------- Dashboard modules (Oct 25, 2026, per Johnna) ----------------
+   The dashboard is now a set of quick-log modules instead of the long Today's Flow list (which moved to its own
+   page in the menu). Because it is mostly the same people working each house, the dashboard is about the things
+   they track: PRN given, how much each resident ate, and (next) water and who is being actively monitored.
+   dashboardModuleOn() is the one place that decides whether a module shows for the current house; Leadership's
+   per-house switches plug into it. */
+const DASH_MODULES = [
+  { key:"monitoring", label:"Actively Monitoring" },
+  { key:"prn",        label:"PRN block" },
+  { key:"meals",      label:"Meals" },
+  { key:"water",      label:"Water intake" }
+];
+function moduleOnForHouse(houseId, key){ const m = houseModules[houseId]; return !m || m[key] !== false; }
+function dashboardModuleOn(key){ return moduleOnForHouse(state.house, key); }
+function toggleDashModule(key){
+  state.dashModulesOpen = state.dashModulesOpen || {};
+  state.dashModulesOpen[key] = !state.dashModulesOpen[key];
+  scheduleRender();
+}
+function dashModuleIsOpen(key){ return !!(state.dashModulesOpen && state.dashModulesOpen[key]); }
+// ---- Meals module: which meal is "current" by the house's meal times, and one-tap percent eaten for every resident
+function dashCurrentMealKey(){
+  if(state.dashMealKey) return state.dashMealKey;
+  const t = currentHouseMealTimes();
+  const now = nowRef(); const mins = now.getHours()*60 + now.getMinutes();
+  const toMin = v => { const m = /^(\d{1,2}):(\d{2})/.exec(String(v||"")); return m ? (+m[1])*60 + (+m[2]) : null; };
+  let key = "breakfast";
+  ["breakfast","lunch","dinner"].forEach(k=>{ const m = toMin(t[k]); if(m !== null && mins >= m - 60) key = k; });
+  return key;
+}
+function setDashMeal(mealKey){ state.dashMealKey = mealKey; scheduleRender(); }
+function quickLogMeal(residentId, mealKey, value){
+  const u = currentUser(); if(!u) return;
+  const dc = getDC(residentId, todayIso());
+  dc.meals[mealKey].pct = value;
+  touchSection(dc, mealKey, u);
+  scheduleRender();
+}
+function renderMealsModule(){
+  const open = dashModuleIsOpen("meals");
+  const mealKey = dashCurrentMealKey();
+  const labels = { breakfast:"Breakfast", lunch:"Lunch", dinner:"Dinner" };
+  const list = houseResidents().slice().sort((a,b)=>{
+    const la = !!getDC(a.id, todayIso()).meals[mealKey].pct, lb = !!getDC(b.id, todayIso()).meals[mealKey].pct;
+    return (la - lb) || String(a.room||"").localeCompare(String(b.room||""), undefined, {numeric:true}) || a.name.localeCompare(b.name);
+  });
+  const logged = list.filter(r=>!!getDC(r.id, todayIso()).meals[mealKey].pct).length;
+  const head = `<button type="button" class="dash-mod-head" aria-expanded="${open}" onclick="toggleDashModule('meals')">
+      <span class="ic">🍽</span><span class="t">Meals — ${labels[mealKey]}</span>
+      <span class="s">${logged} of ${list.length} logged</span><span class="car">${open?"▾":"▸"}</span></button>`;
+  if(!open) return `<div class="card dash-mod">${head}</div>`;
+  const tabs = ["breakfast","lunch","dinner"].map(k=>`<button type="button" class="chip-btn ${k===mealKey?"active":""}" onclick="setDashMeal('${k}')">${labels[k]}</button>`).join("");
+  const rows = list.length ? list.map(r=>{
+    const cur = getDC(r.id, todayIso()).meals[mealKey].pct;
+    return `<div class="dash-meal-row">
+      <div class="who"><span class="nm">${esc(r.name)}</span><span class="rm">Room ${esc(r.room)}</span></div>
+      <div class="chip-row">${MEAL_PCT.map(o=>`<button type="button" class="chip-btn ${cur===o.value?"active":""}" onclick="quickLogMeal('${r.id}','${mealKey}','${o.value}')">${o.label}</button>`).join("")}</div>
+    </div>`;
+  }).join("") : `<div class="cp-hint">No residents in this house.</div>`;
+  return `<div class="card dash-mod open">${head}<div class="dash-mod-body">
+    <div class="chip-row" style="margin-bottom:10px;">${tabs}</div>
+    <div class="cp-hint" style="margin-bottom:6px;">Percent eaten — one tap saves it to the resident's Care Log with your name. Residents still to log are listed first.</div>
+    ${rows}</div></div>`;
+}
+// ---- PRN block: "PRN Med Given? Log Now" -> choose the resident -> straight to that resident's PRN section of the Care Log
+function renderPrnModule(){
+  const open = dashModuleIsOpen("prn");
+  const list = houseResidents().slice().sort((a,b)=>a.name.localeCompare(b.name));
+  const head = `<button type="button" class="dash-mod-head" aria-expanded="${open}" onclick="toggleDashModule('prn')">
+      <span class="ic">💊</span><span class="t">PRN Med Given?</span><span class="s">Log Now</span><span class="car">${open?"▾":"▸"}</span></button>`;
+  if(!open) return `<div class="card dash-mod">${head}</div>`;
+  return `<div class="card dash-mod open">${head}<div class="dash-mod-body">
+    <div class="cp-hint" style="margin-bottom:8px;">Who was it given to? Tap their name — it opens their Care Log right at the PRN section.</div>
+    <div class="dash-res-grid">${list.length ? list.map(r=>`<button type="button" class="chip-btn" onclick="openCareLogAt('${r.id}','prn')">${esc(r.name)}<br><span style="font-size:11px; opacity:.8;">Room ${esc(r.room)}</span></button>`).join("") : `<div class="cp-hint">No residents in this house.</div>`}</div>
+  </div></div>`;
+}
+function renderDashboardModules(){
+  const parts = [];
+  if(dashboardModuleOn("monitoring")) parts.push(renderMonitoringModule());
+  if(dashboardModuleOn("prn")) parts.push(renderPrnModule());
+  if(dashboardModuleOn("meals")) parts.push(renderMealsModule());
+  if(dashboardModuleOn("water")) parts.push(renderWaterModule());
+  if(!parts.length) return "";
+  return `<div class="section"><div class="section-head"><h2>Quick Log</h2><span class="hint">Tap a block to open it</span></div><div class="dash-mods">${parts.join("")}</div></div>`;
+}
+// Today's Flow — wake-ups, showers, meals, scheduled routines and bedtimes — now has its own page in the menu.
+function renderTodaysFlowPage(){
+  document.getElementById("content").innerHTML = `<div class="section">${renderTodaysFlow()}</div>`;
 }
 
 // Today's Flow is one merged, time-sorted list — wake-ups, showers, meals, scheduled routines, and
@@ -10865,6 +11112,7 @@ function saveRoutineOccurrenceLog(residentId, item, occTime, vitalType, value){
     loggedById: who ? who.id : null, loggedByName: who ? who.name : "Staff",
     loggedAt: new Date().toISOString()
   };
+  try{ mirrorRoutineLogToCareLog(residentId, item, occTime, vitalType, value, who, null); }catch(e){ console.error("Routine log -> Care Log entry failed:", e); }
   const r = residents.find(x=>x.id===residentId);
   if(isDeviceSupabaseLive() && supabaseSession && r && r.house === state.house){
     sbClient.from("routine_occurrence_logs")
@@ -10943,10 +11191,11 @@ function renderResidents(){
         <span class="hint">Click a resident to open their full profile</span>
         ${canAdd ? `<button class="btn small" onclick="goView('manageresidents')">👤 Manage Residents</button>` : ""}
         ${canAdd ? `<button class="btn small" onclick="goView('archivedresidents')">🗄 Archive${archivedResidentsForHouse().length ? " (" + archivedResidentsForHouse().length + ")" : ""}</button>` : ""}
-        ${(canAdd && list.length) ? `<button class="btn small" onclick="toggleResidentStatusOpen()">${state.residentStatusOpen ? "Cancel" : "🏥 Update Resident Status"}</button>` : ""}
+        ${(canUpdateResidentStatus() && list.length) ? `<button class="btn small" onclick="toggleResidentStatusOpen()">${state.residentStatusOpen ? "Cancel" : "🏥 Update Resident Status"}</button>` : ""}
       </div>
     </div>
-    ${(canAdd && list.length && state.residentStatusOpen) ? renderResidentStatusPanel() : ""}
+    ${state.residentStatusNote ? `<div class="cp-hint" style="margin:0 0 10px; color:var(--alert-text);">${esc(state.residentStatusNote)}</div>` : ""}
+    ${(canUpdateResidentStatus() && list.length && state.residentStatusOpen) ? renderResidentStatusPanel() : ""}
     ${list.length ? `
     <div class="resident-grid">
       ${list.map(r=>`
@@ -13502,6 +13751,7 @@ function prnLogSectionHtml(r, viewDate, isToday, dc){
   state.prnDraft = state.prnDraft || {}; state.logFormError = state.logFormError || {};
   const draft = state.prnDraft[r.id] || {};
   const err = state.logFormError["prn-"+r.id];
+  if(isToday){ try{ mirrorTodaysRoutineLogs(r.id); }catch(e){} }
   const entries = prnLogsForDay(r.id, viewDate);
   const rows = entries.length ? entries.map(e=>{
     const detail = [e.reason?`Reason: ${esc(e.reason)}`:"", e.response?`Response: ${esc(e.response)}`:""].filter(Boolean).join(" · ");
@@ -13525,7 +13775,7 @@ function prnLogSectionHtml(r, viewDate, isToday, dc){
       ${err ? `<div class="cp-hint" style="color:var(--alert-text); margin-top:6px;">${esc(err)}</div>` : ""}
       <div style="margin-top:8px;"><button class="btn primary small" onclick="addPrnLog('${r.id}')">Log PRN given</button></div>
     </div>` : "";
-  return `${careLogTablesNote()}${rows}${legacy}${form}${isToday ? routineImportedListHtml(routineOccurrenceLogsForResident(r.id,"prn"), "prn") : ""}`;
+  return `${careLogTablesNote()}${rows}${legacy}${form}`;
 }
 function removeLogButton(kind, residentId, id){
   const key = kind+":"+id;
@@ -13614,6 +13864,7 @@ function addVitalLog(residentId, typeKey){
 function vitalLogSectionHtml(r, viewDate, isToday, dc){
   state.vitalDraft = state.vitalDraft || {}; state.logFormError = state.logFormError || {};
   const draft = state.vitalDraft[r.id] || {};
+  if(isToday){ try{ mirrorTodaysRoutineLogs(r.id); }catch(e){} }
   const entries = vitalLogsForDay(r.id, viewDate);
   const rows = entries.length ? entries.map(e=>{
     const vt = VITAL_TYPES.find(v=>v.key===e.type) || VITAL_TYPES[0];
@@ -13644,10 +13895,80 @@ function vitalLogSectionHtml(r, viewDate, isToday, dc){
         return row(vt, `<input type="text" id="vl-${vt.key}-${r.id}" placeholder="Value" value="${dv(vt.key)}" ${oc}>`);
       }).join("")}
     </div>` : "";
-  return `${vitalLogTablesNote()}${rows}${legacy}${form}${isToday ? routineImportedListHtml(routineOccurrenceLogsForResident(r.id,"vital"), "vital") : ""}`;
+  return `${vitalLogTablesNote()}${rows}${legacy}${form}`;
 }
 
 // ---- 92: Missed Medication log ----
+
+// ---- Oct 2026 (items 144): a refusal recorded anywhere (Due Now, Today's Flow, the Care Log) lands in the Care Log's
+// Missed Medication section by itself, marked "Refused" with the reason; the same dose can't then be logged twice by
+// hand (the picker shows it as "✓ logged"). Changing the dose back to Pass takes the automatic entry away again
+// (Manager/Leadership delete it; anyone else leaves it with a "later given" note, because only a Manager/Leadership
+// may delete a log entry in the database).
+function isAutoRefusalEntry(e){ return !!e.auto || /^Refused/.test(e.note || ""); }
+function syncRefusalToMissedLog(residentId, medId, anchor, status, reason){
+  const med = ((carePlans[residentId]||{}).medications||[]).find(m=>String(m.id)===String(medId));
+  const who = currentUser();
+  if(!med || !who) return;
+  const a = medAnchorsForMed(med).find(x=>x.anchor===anchor);
+  const doseLabel = a ? a.label : "";
+  const day = state.dcViewDate || todayIso();
+  const list = (missedMedLogs[residentId] = missedMedLogs[residentId] || []);
+  const existing = list.find(e=>e.date===day && e.medication===med.name && (e.doseLabel||"")===doseLabel);
+  if(status === "refuse"){
+    const note = "Refused" + (reason ? ": " + reason : "");
+    if(existing){
+      if(isAutoRefusalEntry(existing) && existing.note !== note){ existing.note = note; existing.synced = false; }
+      return;
+    }
+    list.push({ id:newCareLogId(), seq:careLogSeq++, date:day, medication:med.name, dosage:med.dosage||"", doseLabel, note, auto:true,
+      byId:who.id, byName:who.name, createdAt:new Date().toISOString(), synced:false });
+    return;
+  }
+  if(existing && isAutoRefusalEntry(existing)){
+    if(who.role === "manager" || who.role === "leadership"){
+      missedMedLogs[residentId] = list.filter(e=>e!==existing);
+      if(supabaseSession && isLiveLogId(existing.id)){
+        Promise.resolve(sbClient.from("missed_medication_logs").delete().eq("id", existing.id))
+          .then(res=>{ if(res && res.error){ noteCareLogTableError(res.error); console.error("Supabase refusal entry delete failed:", res.error); } }).catch(()=>{});
+      }
+    } else if(!/later given/.test(existing.note || "")){
+      existing.note = (existing.note || "Refused") + " — later given (changed to Pass by " + who.name + ")";
+      existing.synced = false;
+    }
+  }
+}
+
+// ---- Oct 2026 (item 144, "same for PRN and vitals"): a Check Vital / Give PRN routine logged from Today's Flow or Due
+// Now becomes a real entry in the Care Log's Vital Signs / PRN lists (same tables as hand-entered ones), so every list,
+// hand-over and report reads one place. Matching is by routine+time, or by day+time+type/medication, so nothing doubles.
+function mirrorRoutineLogToCareLog(residentId, item, occTime, vitalType, value, who, atIso){
+  if(!item || !occTime || !residentId) return;
+  const day = TODAY_ISO, ref = item.id + "|" + day + "|" + occTime;
+  const when = atIso || new Date().toISOString();
+  const by = who || {};
+  if(item.type === "vital"){
+    const type = vitalType || item.vitalType; if(!type) return;
+    const list = (vitalLogs[residentId] = vitalLogs[residentId] || []);
+    const ex = list.find(e=>e.occRef === ref) || list.find(e=>e.date===day && e.time===occTime && e.type===type);
+    if(ex){ if(JSON.stringify(ex.value||{}) !== JSON.stringify(value||{})){ ex.value = value || {}; ex.synced = false; } if(!ex.occRef) ex.occRef = ref; return; }
+    list.push({ id:newCareLogId(), seq:careLogSeq++, date:day, time:occTime, type, value:value||{}, byId:by.id||by.loggedById||null, byName:by.name||by.loggedByName||"Staff", createdAt:when, synced:false, occRef:ref });
+  } else if(item.type === "prn"){
+    const med = (item.detail || "").trim() || "PRN medication";
+    const list = (prnLogs[residentId] = prnLogs[residentId] || []);
+    const ex = list.find(e=>e.occRef === ref) || list.find(e=>e.date===day && e.time===occTime && e.medication===med);
+    const v = value || {};
+    if(ex){ if((ex.reason||"") !== (v.reason||"") || (ex.response||"") !== (v.response||"")){ ex.reason = v.reason||""; ex.response = v.response||""; ex.synced = false; } if(!ex.occRef) ex.occRef = ref; return; }
+    list.push({ id:newCareLogId(), seq:careLogSeq++, date:day, time:occTime, medication:med, dose:"", reason:v.reason||"", response:v.response||"", byId:by.id||by.loggedById||null, byName:by.name||by.loggedByName||"Staff", createdAt:when, synced:false, occRef:ref });
+  }
+}
+// Fills in entries for anything logged from a routine earlier today (before this existed, or on another device).
+function mirrorTodaysRoutineLogs(residentId){
+  routineOccurrenceLogsForResident(residentId).forEach(o=>{
+    if(!o.item || (o.item.type !== "vital" && o.item.type !== "prn")) return;
+    mirrorRoutineLogToCareLog(residentId, o.item, o.occTime, o.vitalType, o.value, { id:o.loggedById, name:o.loggedByName }, o.loggedAt);
+  });
+}
 function missedMedLogsForDay(residentId, dateIso){
   return (missedMedLogs[residentId]||[]).filter(e=>e.date===dateIso).sort((a,b)=>(a.seq||0)-(b.seq||0));
 }
@@ -13768,6 +14089,11 @@ function handoverSummary(houseId, info){
         const cond = dc.general.overall ? ({stable:"Stable/at baseline", improved:"Improved", decline:"Decline noted", monitoring:"Requires monitoring"})[dc.general.overall] : "";
         g.careLog.push(`General condition${cond?`: ${cond}`:""}${dc.general.notes?` — ${dc.general.notes}`:""} — ${by("general")}`);
       }
+      const NOTE_LABELS = { meals:"Meals", prn:"PRN", missed:"Missed medication", vitals:"Vital signs", skin:"Skin/wound", incident:"Incidents" };
+      Object.keys(dc.notes || {}).forEach(k=>{
+        const t = String(dc.notes[k] || "").trim();
+        if(t && NOTE_LABELS[k] && touched("notes_" + k)) g.careLog.push(`${NOTE_LABELS[k]} note — ${t} — ${by("notes_" + k)}`);
+      });
     });
     if(g.notes.length || g.careLog.length || g.prn.length || g.missed.length) groups.push(g);
   });
@@ -14253,6 +14579,367 @@ async function loadCleaningFromSupabase(houseId){
   }catch(e){ console.warn("Loading cleaning schedule failed:", e); }
 }
 
+/* ---------------- Water intake, Actively Monitor, per-house module switches (Oct 25, 2026, per Johnna) ----------------
+   Live tables: house_modules, resident_water_goals, water_intake_logs, resident_monitoring (batch_n_water_monitoring_modules.sql).
+   Until they exist, everything still works and is held on this device; a red note says so. */
+let houseModules = {};      // houseId -> { prn:bool, meals:bool, monitoring:bool, water:bool }   (missing = on)
+let houseModuleUnsynced = {}; // "houseId|key" -> true while a Leadership change has not reached the database
+let waterLogs = {};         // residentId -> [{id, seq, date, oz, byId, byName, at, synced}]
+let waterGoals = {};        // residentId -> { oz, synced }
+let monitorings = {};       // residentId -> [{id, houseId, section, reason, startedBy, startedByName, startedAt, endedBy, endedByName, endedAt, synced, endSynced}]
+let step3TablesLive = true;
+const WATER_DEFAULT_OZ = 48, CUP_OZ = 8;
+const MODULE_NOTES = { monitoring:"Actively Monitoring block and tile", prn:"PRN block", meals:"Meals block", water:"Water block and the Water section of the Care Log" };
+const MON_SECTIONS = ["meals","water","prn","missed","vitals","skin","elimination","incident","general"];
+const MON_LABELS = { meals:"Meals", water:"Water intake", prn:"PRN medication", missed:"Missed medication", vitals:"Vital signs", skin:"Skin / wounds", elimination:"Bowel & urination", incident:"Incidents", general:"General condition" };
+function noteStep3Error(error){ if(error && CARE_LOG_TABLE_MISSING_RE.test(error.message || "")) step3TablesLive = false; }
+function step3TablesNote(){
+  return (isDeviceSupabaseLive() && !step3TablesLive)
+    ? `<div class="cp-hint" style="margin-bottom:8px; color:var(--alert-text);">Water, Actively Monitor and the module switches are only saving on this device for now — the database update for them hasn't been run yet.</div>` : "";
+}
+function step3LiveFor(id){ return !!supabaseSession && isLiveLogId(id); }
+function shortStamp(iso){
+  const d = new Date(iso); if(isNaN(d)) return "";
+  const mo = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"][d.getMonth()];
+  return `${mo} ${d.getDate()}, ${formatTime12(`${String(d.getHours()).padStart(2,"0")}:${String(d.getMinutes()).padStart(2,"0")}`)}`;
+}
+function timeOfIso(iso){ const d = new Date(iso); return isNaN(d) ? "" : formatTime12(`${String(d.getHours()).padStart(2,"0")}:${String(d.getMinutes()).padStart(2,"0")}`); }
+
+// ---- row mappers
+function waterRowForSupabase(residentId, e){ return { id:e.id, resident_id:residentId, log_date:e.date, amount_oz:e.oz, logged_by:e.byId, logged_at:e.at }; }
+function waterRowFromSupabase(row){ return { id:row.id, seq:careLogSeq++, date:row.log_date, oz:Number(row.amount_oz), byId:row.logged_by, byName:staffNameById(row.logged_by), at:row.logged_at, synced:true }; }
+function monitorRowForSupabase(m, residentId){ return { id:m.id, resident_id:residentId, house_id:m.houseId, section:m.section, reason:m.reason, started_by:m.startedBy, started_at:m.startedAt }; }
+function monitorRowFromSupabase(row){
+  return { id:row.id, houseId:row.house_id, section:row.section, reason:row.reason||"", startedBy:row.started_by, startedByName:staffNameById(row.started_by),
+    startedAt:row.started_at, endedBy:row.ended_by||null, endedByName:row.ended_by?staffNameById(row.ended_by):"", endedAt:row.ended_at||null, synced:true, endSynced:true };
+}
+
+// ---- loading
+async function loadStep3FromSupabase(houseId, ids){
+  try{
+    const since = (()=>{ const d = nowRef(); d.setDate(d.getDate()-14); return isoDate(d); })();
+    const idList = ids || [];
+    const [mRes, monRes, wRes, gRes] = await Promise.all([
+      sbClient.from("house_modules").select("*").eq("house_id", houseId),
+      sbClient.from("resident_monitoring").select("*").eq("house_id", houseId).is("ended_at", null),
+      idList.length ? sbClient.from("water_intake_logs").select("*").in("resident_id", idList).gte("log_date", since).order("logged_at") : Promise.resolve({ data:[] }),
+      idList.length ? sbClient.from("resident_water_goals").select("*").in("resident_id", idList) : Promise.resolve({ data:[] })
+    ]);
+    const bad = mRes.error || monRes.error || wRes.error || gRes.error;
+    if(bad){ noteStep3Error(bad); console.warn("Loading water / monitoring / module settings failed:", bad.message); return; }
+    step3TablesLive = true;
+    // module switches: the database wins except for a change this device has not sent yet
+    { const cur = houseModules[houseId] || {}; const next = {};
+      (mRes.data||[]).forEach(row=>{ next[row.module_key] = !!row.enabled; });
+      Object.keys(cur).forEach(k=>{ if(houseModuleUnsynced[houseId+"|"+k]) next[k] = cur[k]; });
+      houseModules[houseId] = next; }
+    // water goals
+    (gRes.data||[]).forEach(row=>{ waterGoals[row.resident_id] = { oz:Number(row.goal_oz), synced:true }; });
+    // water entries: what the database returned replaces synced local ones; unsent local ones stay
+    idList.forEach(rid=>{
+      const rows = (wRes.data||[]).filter(x=>x.resident_id===rid);
+      waterLogs[rid] = rows.map(waterRowFromSupabase).concat((waterLogs[rid]||[]).filter(e=>!e.synced && !rows.some(x=>x.id===e.id)));
+    });
+    // monitoring: active ones from the database; an unsent start or an unsent switch-off made here is kept
+    { const byRes = {};
+      (monRes.data||[]).forEach(row=>{ (byRes[row.resident_id] = byRes[row.resident_id] || []).push(row); });
+      idList.forEach(rid=>{
+        const local = monitorings[rid] || [];
+        const rows = byRes[rid] || [];
+        const out = rows.map(row=>{ const lm = local.find(x=>x.id===row.id); return (lm && lm.endedAt && !lm.endSynced) ? lm : monitorRowFromSupabase(row); });
+        local.forEach(lm=>{ if(!lm.synced && !out.some(x=>x.id===lm.id)) out.push(lm); });
+        monitorings[rid] = out;
+      }); }
+  }catch(e){ console.warn("Loading water / monitoring / module settings failed:", e); }
+}
+const STEP3_REFRESH_MS = 45000;
+let step3Timer = null, step3Loading = false, step3RefreshAt = 0;
+function step3Sig(){
+  const ids = houseResidents().map(r=>r.id);
+  return JSON.stringify([houseModules[state.house]||{}, ids.map(id=>[id, (waterLogs[id]||[]).length, waterTotalOz(id, todayIso()), activeMonitors(id).map(m=>m.id)])]);
+}
+function step3MaybeRefresh(force){
+  if(!supabaseSession || !state.userId || step3Loading || !SUPABASE_LIVE_HOUSE_IDS.has(state.house)) return;
+  if(!force && step3RefreshAt && Date.now() - step3RefreshAt < STEP3_REFRESH_MS - 5000) return;
+  if(!step3Timer && typeof setInterval === "function") step3Timer = setInterval(()=>{ if(state.userId) step3MaybeRefresh(true); }, STEP3_REFRESH_MS);
+  step3Loading = true; step3RefreshAt = Date.now();
+  const before = step3Sig();
+  const ids = houseResidents().map(r=>r.id);
+  Promise.resolve(loadStep3FromSupabase(state.house, ids)).then(()=>{
+    step3Loading = false;
+    if(step3Sig() !== before && (state.view === "dashboard" || state.view === "dailycare")) scheduleRender();
+  }, ()=>{ step3Loading = false; });
+}
+
+// ---- sending: entries made here are sent once and marked synced; a failure is retried by the next sync
+async function flushStep3Resident(rid){
+  if(!supabaseSession || !canDocumentCareViaSupabase()) return;
+  for(const e of (waterLogs[rid]||[]).filter(x=>step3LiveFor(x.id) && !x.synced && !x.saving)){
+    e.saving = true;
+    try{
+      const { error } = await sbClient.from("water_intake_logs").upsert(waterRowForSupabase(rid, e), { onConflict:"id" });
+      if(error){ noteStep3Error(error); console.error("Supabase water log sync failed:", error); } else { e.synced = true; }
+    } finally { e.saving = false; }
+  }
+  const g = waterGoals[rid];
+  if(g && !g.synced && isManagerOrLeadershipUser()){
+    const u = currentUser();
+    const { error } = await sbClient.from("resident_water_goals").upsert({ resident_id:rid, goal_oz:g.oz, updated_by:u.id, updated_at:new Date().toISOString() }, { onConflict:"resident_id" });
+    if(error){ noteStep3Error(error); console.error("Supabase water goal sync failed:", error); } else { g.synced = true; }
+  }
+  for(const m of (monitorings[rid]||[])){
+    if(!step3LiveFor(m.id) || m.saving) continue;
+    m.saving = true;
+    try{
+      if(!m.synced){
+        const { error } = await sbClient.from("resident_monitoring").insert(monitorRowForSupabase(m, rid));
+        if(error && error.code !== "23505"){ noteStep3Error(error); console.error("Supabase monitoring start failed:", error); } else { m.synced = true; }
+      }
+      if(m.synced && m.endedAt && !m.endSynced){
+        const { error } = await sbClient.from("resident_monitoring").update({ ended_by:m.endedBy, ended_at:m.endedAt }).eq("id", m.id);
+        if(error){ noteStep3Error(error); console.error("Supabase monitoring end failed:", error); } else { m.endSynced = true; }
+      }
+    } finally { m.saving = false; }
+  }
+}
+function isManagerOrLeadershipUser(){ const u = currentUser(); return !!u && (u.role==="manager" || u.role==="leadership"); }
+async function flushHouseModules(){
+  if(!supabaseSession || !isSystemAdmin()) return;
+  const u = currentUser();
+  for(const k of Object.keys(houseModuleUnsynced)){
+    const [hid, key] = k.split("|");
+    if(!SUPABASE_LIVE_HOUSE_IDS.has(hid)) continue;
+    const enabled = (houseModules[hid]||{})[key] !== false;
+    const { error } = await sbClient.from("house_modules").upsert({ house_id:hid, module_key:key, enabled, updated_by:u.id, updated_at:new Date().toISOString() }, { onConflict:"house_id,module_key" });
+    if(error){ noteStep3Error(error); console.error("Supabase module switch failed:", error); } else { delete houseModuleUnsynced[k]; }
+  }
+}
+
+// ---- Leadership's per-house switches (Manage Houses)
+function setHouseModule(houseId, key, enabled){
+  if(!isSystemAdmin() || !MODULE_NOTES[key]) return;
+  (houseModules[houseId] = houseModules[houseId] || {})[key] = !!enabled;
+  houseModuleUnsynced[houseId+"|"+key] = true;
+  scheduleRender();
+  flushHouseModules().then(()=>scheduleRender()).catch(e=>console.warn("Module switch sync failed:", e));
+}
+function houseModulesHtml(h){
+  if(!isSystemAdmin()) return "";
+  return `<div class="mod-switches"><span class="hint" style="margin:0;">Dashboard modules:</span>${DASH_MODULES.map(m=>{
+    const on = moduleOnForHouse(h.id, m.key);
+    return `<button type="button" class="chip-btn ${on?"active":""}" title="${esc(MODULE_NOTES[m.key])}" aria-pressed="${on}" onclick="setHouseModule(${jsId(h.id)},'${m.key}',${!on})">${esc(m.label)}: ${on?"On":"Off"}</button>`;
+  }).join("")}</div>${step3TablesNote()}`;
+}
+
+// ---- Water
+function waterGoalOz(residentId){ const g = waterGoals[residentId]; return g && g.oz > 0 ? g.oz : WATER_DEFAULT_OZ; }
+function waterEntriesForDay(residentId, dateIso){ return (waterLogs[residentId]||[]).filter(e=>e.date===dateIso).sort((a,b)=>String(a.at||"").localeCompare(String(b.at||"")) || (a.seq||0)-(b.seq||0)); }
+function waterTotalOz(residentId, dateIso){ return waterEntriesForDay(residentId, dateIso).reduce((t,e)=>t+(Number(e.oz)||0), 0); }
+function cupsNum(oz){ return String(Math.round((oz/CUP_OZ)*10)/10); }
+function cupsLabel(oz){ const c = Math.round((oz/CUP_OZ)*10)/10; return cupsNum(oz) + (c===1 ? " cup" : " cups"); }
+function waterEntryLabel(oz){ return oz===8 ? "1 cup (8 oz)" : (oz===4 ? "½ cup (4 oz)" : `${oz} oz`); }
+function addWater(residentId, oz){
+  const u = currentUser(); if(!u) return false;
+  oz = Number(oz);
+  if(!(oz > 0 && oz <= 100)) return false;
+  const now = nowRef();
+  (waterLogs[residentId] = waterLogs[residentId] || []).push({ id:newCareLogId(), seq:careLogSeq++, date:isoDate(now), oz, byId:u.id, byName:u.name, at:now.toISOString(), synced:false });
+  scheduleRender();
+  flushStep3Resident(residentId).then(()=>{}, e=>console.warn("Water sync failed:", e));
+  return true;
+}
+function toggleWaterCustom(residentId){ state.waterCustomOpen = state.waterCustomOpen || {}; state.waterCustomOpen[residentId] = !state.waterCustomOpen[residentId]; state.waterCustomError = null; scheduleRender(); }
+function addWaterCustom(residentId){
+  const el = document.getElementById("water-custom-" + residentId);
+  const v = el ? Number(el.value) : NaN;
+  if(!(v > 0 && v <= 100)){ state.waterCustomError = { id:residentId, msg:"Enter the amount in ounces (1 cup = 8 oz), up to 100." }; scheduleRender(); return; }
+  state.waterCustomError = null;
+  if(state.waterCustomOpen) state.waterCustomOpen[residentId] = false;
+  addWater(residentId, v);
+}
+function canRemoveWaterEntry(e){ const u = currentUser(); return !!u && (u.id === e.byId || isManagerOrLeadershipUser()); }
+function removeWaterEntry(residentId, id){
+  const e = (waterLogs[residentId]||[]).find(x=>x.id===id);
+  if(!e || !canRemoveWaterEntry(e)) return;
+  waterLogs[residentId] = waterLogs[residentId].filter(x=>x.id!==id);
+  state.removeLogConfirm = null;
+  if(step3LiveFor(id)){
+    Promise.resolve(sbClient.from("water_intake_logs").delete().eq("id", id)).then(({error})=>{ if(error){ noteStep3Error(error); console.error("Supabase water entry delete failed:", error); } });
+  }
+  scheduleRender();
+}
+function canSetWaterGoal(){ return isManagerOrLeadershipUser(); }
+function saveWaterGoal(residentId){
+  if(!canSetWaterGoal()) return;
+  const el = document.getElementById("water-goal-" + residentId);
+  const cups = el ? Number(el.value) : NaN;
+  if(!(cups > 0 && cups <= 50)){ state.waterGoalError = { id:residentId, msg:"Enter a goal in cups, for example 6." }; scheduleRender(); return; }
+  state.waterGoalError = null;
+  waterGoals[residentId] = { oz:Math.round(cups*CUP_OZ*10)/10, synced:false };
+  scheduleRender();
+  flushStep3Resident(residentId).then(()=>{}, e=>console.warn("Water goal sync failed:", e));
+}
+function waterBarHtml(residentId, dateIso){
+  const total = waterTotalOz(residentId, dateIso), goal = waterGoalOz(residentId);
+  const pct = Math.min(100, Math.round((total/goal)*100));
+  return `<div class="water-cell"><div class="water-bar ${total>=goal?"done":""}" role="img" aria-label="${cupsNum(total)} of ${cupsNum(goal)} cups"><i style="width:${pct}%"></i></div>
+    <div class="water-num">${cupsNum(total)} of ${cupsNum(goal)} cups${total>=goal?" ✓":""}</div></div>`;
+}
+function waterButtonsHtml(residentId){
+  const open = !!(state.waterCustomOpen && state.waterCustomOpen[residentId]);
+  const err = state.waterCustomError && state.waterCustomError.id===residentId ? `<div class="cp-hint" style="color:var(--alert-text); width:100%;">${esc(state.waterCustomError.msg)}</div>` : "";
+  return `<div class="chip-row">
+      <button type="button" class="chip-btn" onclick="addWater(${jsId(residentId)},8)">+ 1 cup</button>
+      <button type="button" class="chip-btn" onclick="addWater(${jsId(residentId)},4)">+ ½ cup</button>
+      <button type="button" class="chip-btn ${open?"active":""}" onclick="toggleWaterCustom(${jsId(residentId)})">Custom</button>
+    </div>
+    ${open ? `<div class="dc-inline-input" style="display:flex; gap:8px; align-items:center; flex-wrap:wrap; width:100%;"><input type="number" id="water-custom-${residentId}" min="1" max="100" step="0.5" inputmode="decimal" placeholder="Ounces" style="max-width:130px;"><button type="button" class="btn small primary" onclick="addWaterCustom(${jsId(residentId)})">Add</button><span class="cp-hint" style="margin:0;">1 cup = 8 oz</span>${err}</div>` : ""}`;
+}
+function renderWaterModule(){
+  const open = dashModuleIsOpen("water");
+  const day = todayIso();
+  const list = houseResidents().slice().sort((a,b)=>String(a.room||"").localeCompare(String(b.room||""), undefined, {numeric:true}) || a.name.localeCompare(b.name));
+  const atGoal = list.filter(r=>waterTotalOz(r.id, day) >= waterGoalOz(r.id)).length;
+  const head = `<button type="button" class="dash-mod-head" aria-expanded="${open}" onclick="toggleDashModule('water')">
+      <span class="ic">💧</span><span class="t">Water intake</span>
+      <span class="s">${atGoal} of ${list.length} at goal</span><span class="car">${open?"▾":"▸"}</span></button>`;
+  if(!open) return `<div class="card dash-mod">${head}</div>`;
+  const rows = list.length ? list.map(r=>`<div class="dash-meal-row">
+      <div class="who"><span class="nm">${esc(r.name)}</span><span class="rm">Room ${esc(r.room)}</span></div>
+      ${waterBarHtml(r.id, day)}
+      <div style="display:flex; flex-direction:column; gap:6px;">${waterButtonsHtml(r.id)}</div>
+    </div>`).join("") : `<div class="cp-hint">No residents in this house.</div>`;
+  return `<div class="card dash-mod open">${head}<div class="dash-mod-body">
+    ${step3TablesNote()}
+    <div class="cp-hint" style="margin-bottom:6px;">One cup is 8 oz. Each tap is saved to the resident's Care Log with your name and the time.</div>
+    ${rows}</div></div>`;
+}
+function waterSectionHtml(r, viewDate, isToday){
+  const entries = waterEntriesForDay(r.id, viewDate);
+  const total = waterTotalOz(r.id, viewDate), goal = waterGoalOz(r.id);
+  const goalErr = state.waterGoalError && state.waterGoalError.id===r.id ? `<div class="cp-hint" style="color:var(--alert-text);">${esc(state.waterGoalError.msg)}</div>` : "";
+  const rows = entries.length ? entries.map(e=>{
+    const key = "water:"+e.id;
+    const rm = canRemoveWaterEntry(e) && isToday ? (state.removeLogConfirm===key
+      ? ` <button class="btn small" onclick="removeWaterEntry(${jsId(r.id)},${jsId(e.id)})">Confirm remove</button> <button class="btn small" onclick="state.removeLogConfirm=null; scheduleRender();">Keep</button>`
+      : ` <button class="btn small" onclick="state.removeLogConfirm=${jsId(key)}; scheduleRender();">Remove</button>`) : "";
+    return `<div class="visitor-row"><div><div class="visitor-name">${timeOfIso(e.at)} — ${waterEntryLabel(e.oz)}</div></div><div class="visitor-note">${esc(e.byName||"Staff")}${rm}</div></div>`;
+  }).join("") : `<div class="cp-hint">No water logged ${isToday ? "yet today" : "on this day"}.</div>`;
+  return `${step3TablesNote()}
+    <div class="dc-field">
+      <div class="dc-meal-head"><span class="dc-label" style="margin-bottom:0;">Total ${isToday?"today":"that day"}: ${cupsNum(total)} of ${cupsNum(goal)} cups (${Math.round(total)} oz)</span></div>
+      <div style="max-width:420px; margin-top:6px;"><div class="water-bar ${total>=goal?"done":""}"><i style="width:${Math.min(100,Math.round((total/goal)*100))}%"></i></div></div>
+    </div>
+    ${isToday ? `<div class="dc-field" style="margin-top:10px;"><span class="dc-label">Log water</span>${waterButtonsHtml(r.id)}</div>` : ""}
+    <div class="dc-field" style="margin-top:10px;">${rows}</div>
+    ${canSetWaterGoal() && isToday ? `<div class="dc-field" style="margin-top:10px;"><span class="dc-label">Daily goal (House Manager / Leadership)</span>
+      <div class="dc-inline-input" style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;"><input type="number" id="water-goal-${r.id}" min="1" max="50" step="0.5" inputmode="decimal" value="${cupsNum(goal)}" style="max-width:110px;"> <span class="cp-hint" style="margin:0;">cups (1 cup = 8 oz)</span><button type="button" class="btn small" onclick="saveWaterGoal(${jsId(r.id)})">Save goal</button></div>${goalErr}</div>`
+      : `<div class="cp-hint" style="margin-top:8px;">Daily goal: ${cupsNum(goal)} cups. A House Manager or Leadership can change it.</div>`}`;
+}
+
+// ---- Actively Monitor
+function activeMonitors(residentId){ return (monitorings[residentId]||[]).filter(m=>!m.endedAt); }
+function activeMonitor(residentId, section){ return activeMonitors(residentId).find(m=>m.section===section) || null; }
+function canEndMonitoring(){ return isManagerOrLeadershipUser(); }
+function monDraftKey(residentId, section){ return residentId + "|" + section; }
+function openMonitorForm(residentId, section){ state.monDraft = state.monDraft || {}; state.monDraft[monDraftKey(residentId, section)] = { open:true, text:"", error:"" }; scheduleRender(); }
+function cancelMonitorForm(residentId, section){ if(state.monDraft) delete state.monDraft[monDraftKey(residentId, section)]; scheduleRender(); }
+function setMonitorText(residentId, section, v){ state.monDraft = state.monDraft || {}; const d = state.monDraft[monDraftKey(residentId, section)] || (state.monDraft[monDraftKey(residentId, section)] = { open:true }); d.text = v; }
+function startMonitoring(residentId, section){
+  const u = currentUser(); if(!u) return;
+  if(!MON_SECTIONS.includes(section) || activeMonitor(residentId, section)) return;
+  const r = residents.find(x=>x.id===residentId); if(!r) return;
+  state.monDraft = state.monDraft || {};
+  const d = state.monDraft[monDraftKey(residentId, section)] || (state.monDraft[monDraftKey(residentId, section)] = { open:true });
+  const el = document.getElementById(`mon-reason-${residentId}-${section}`);
+  if(el) d.text = el.value;
+  const reason = String(d.text||"").trim();
+  if(!reason){ d.error = "Type what you are watching for before turning this on."; scheduleRender(); return; }
+  (monitorings[residentId] = monitorings[residentId] || []).push({ id:newCareLogId(), houseId:r.house, section, reason, startedBy:u.id, startedByName:u.name,
+    startedAt:nowRef().toISOString(), endedBy:null, endedByName:"", endedAt:null, synced:false, endSynced:false });
+  delete state.monDraft[monDraftKey(residentId, section)];
+  scheduleRender();
+  flushStep3Resident(residentId).then(()=>{}, e=>console.warn("Monitoring sync failed:", e));
+}
+function stopMonitoring(residentId, id){
+  const u = currentUser(); if(!u || !canEndMonitoring()) return;
+  const m = (monitorings[residentId]||[]).find(x=>x.id===id); if(!m || m.endedAt) return;
+  m.endedAt = nowRef().toISOString(); m.endedBy = u.id; m.endedByName = u.name; m.endSynced = false;
+  state.monStopConfirm = null;
+  scheduleRender();
+  flushStep3Resident(residentId).then(()=>{}, e=>console.warn("Monitoring sync failed:", e));
+}
+function monitorBoxHtml(r, section, isToday){
+  const act = activeMonitor(r.id, section);
+  if(act){
+    const stopping = state.monStopConfirm === act.id;
+    const btns = !canEndMonitoring() ? `<div class="mon-sub">Only House Managers and Leadership can switch this off.</div>`
+      : (stopping ? `<button class="btn small" onclick="stopMonitoring(${jsId(r.id)},${jsId(act.id)})">Yes, switch off</button> <button class="btn small" onclick="state.monStopConfirm=null; scheduleRender();">Keep monitoring</button>`
+                  : `<button class="btn small" onclick="state.monStopConfirm=${jsId(act.id)}; scheduleRender();">Switch off monitoring</button>`);
+    return `<div class="mon-box on"><div class="mon-tag">Actively monitoring</div><div><b>${esc(act.reason)}</b></div>
+      <div class="mon-sub">Started by ${esc(act.startedByName||"Staff")} · ${shortStamp(act.startedAt)}</div>${btns}</div>`;
+  }
+  if(!isToday || !canDocumentCareViaSupabase()) return "";
+  const d = (state.monDraft||{})[monDraftKey(r.id, section)];
+  if(!d || !d.open) return `<div class="mon-box"><button class="btn small" onclick="openMonitorForm(${jsId(r.id)},'${section}')">Actively Monitor</button></div>`;
+  return `<div class="mon-box"><div class="dc-label">What are you watching for? <span class="dc-required">*</span></div>
+    <div class="dc-inline-input"><textarea id="mon-reason-${r.id}-${section}" placeholder="For example: poor appetite since Tuesday, watch for dizziness…" oninput="setMonitorText(${jsId(r.id)},'${section}',this.value)">${esc(d.text||"")}</textarea></div>
+    ${d.error ? `<div class="cp-hint" style="color:var(--alert-text);">${esc(d.error)}</div>` : ""}
+    <div style="margin-top:6px; display:flex; gap:8px; flex-wrap:wrap;"><button class="btn primary small" onclick="startMonitoring(${jsId(r.id)},'${section}')">Start monitoring</button><button class="btn small" onclick="cancelMonitorForm(${jsId(r.id)},'${section}')">Cancel</button></div>
+    <div class="cp-hint" style="margin-top:6px;">It stays on until a House Manager or Leadership switches it off.</div></div>`;
+}
+function monitorBannerHtml(r){
+  const list = activeMonitors(r.id);
+  if(!list.length) return "";
+  return `<div class="mon-box on" style="margin:0 0 14px;"><div class="mon-tag">Actively monitored</div>${list.map(m=>`<div style="margin-top:4px;"><b>${MON_LABELS[m.section]||m.section}:</b> ${esc(m.reason)}</div>`).join("")}</div>`;
+}
+// Resident + sections + "watching for" text; tapping a line opens that resident's Care Log at the section.
+function monitoringListHtml(list){
+  const rows = list.filter(r=>activeMonitors(r.id).length);
+  const note = `<div class="cp-hint" style="margin-bottom:8px;">Actively monitored — tap a line to open that part of the resident's Care Log</div>`;
+  if(!rows.length) return note + `<div class="comment-body" style="color:var(--text-faint);">No one is being actively monitored right now. To start, open a resident's Care Log and tap Actively Monitor on the section.</div>`;
+  return note + rows.map(r=>`<div class="card" style="padding:12px 14px; margin-bottom:8px;">
+      <div style="font-weight:700;">${esc(r.name)} <span style="font-weight:500; color:var(--text-faint);">Room ${esc(r.room)}</span></div>
+      ${activeMonitors(r.id).map(m=>`<button type="button" class="mon-row" onclick="openCareLogAt(${jsId(r.id)},'${m.section}')"><span class="sec">${MON_LABELS[m.section]||m.section}</span> — watching for: ${esc(m.reason)}<br><span style="font-size:12px; color:var(--text-faint);">Since ${shortStamp(m.startedAt)} · ${esc(m.startedByName||"Staff")}</span></button>`).join("")}
+    </div>`).join("");
+}
+function renderMonitoringModule(){
+  const open = dashModuleIsOpen("monitoring");
+  const list = houseResidents();
+  const n = list.filter(r=>activeMonitors(r.id).length).length;
+  const head = `<button type="button" class="dash-mod-head" aria-expanded="${open}" onclick="toggleDashModule('monitoring')">
+      <span class="ic">👁</span><span class="t">Actively monitoring</span><span class="s">${n} resident${n===1?"":"s"}</span><span class="car">${open?"▾":"▸"}</span></button>`;
+  if(!open) return `<div class="card dash-mod">${head}</div>`;
+  return `<div class="card dash-mod open">${head}<div class="dash-mod-body">${step3TablesNote()}${monitoringListHtml(list)}</div></div>`;
+}
+
+// A free-text note for one Care Log section (Oct 2026, per Johnna: "each section of the care log should have an option to
+// write notes"). Saved with that day's record (inside section_meta._notes), stamped with who wrote it and when.
+// Bowel/urination keeps its own "Comments / action taken" box and General condition its own Notes box.
+function dcNotesBox(r, dc, key){
+  const k = "notes_" + key;
+  const stamp = dc.meta && dc.meta[k] ? dcStamp(dc, k) : "";
+  const label = { meals:"Notes about meals", prn:"Notes about PRN", missed:"Notes about missed medication", vitals:"Notes about vital signs", skin:"Notes about skin / wounds", incident:"Notes about incidents", water:"Notes about water" }[key] || "Notes";
+  const field = "notes" + key.charAt(0).toUpperCase() + key.slice(1);
+  return `<div class="dc-field" style="margin-top:12px;"><div class="dc-meal-head"><span class="dc-label" style="margin-bottom:0;">${label}</span>${stamp}</div>
+    <div class="dc-inline-input"><textarea id="dc-${field}-${r.id}" placeholder="Add a note…" onchange="dcTouchField('${r.id}','${k}')">${esc((dc.notes||{})[key]||"")}</textarea></div></div>`;
+}
+// Opens a resident's Care Log (today) scrolled straight to one section, which is highlighted for a moment.
+// sectionKey: meals, prn, missed, vitals, skin, elimination, incident, general (and water once that section exists).
+function openCareLogAt(residentId, sectionKey){
+  state.dcResidentId = residentId;
+  state.dcViewDate = null;
+  state.view = "dailycaredetail";
+  render();
+  const go = ()=>{
+    const el = document.getElementById("dc-sec-" + sectionKey);
+    if(!el) return;
+    try{ el.scrollIntoView({ behavior:"smooth", block:"start" }); }catch(e){ el.scrollIntoView(); }
+    el.classList.add("dc-sec-flash");
+    setTimeout(()=>{ el.classList.remove("dc-sec-flash"); }, 2400);
+  };
+  if(typeof requestAnimationFrame === "function") requestAnimationFrame(()=>setTimeout(go, 30)); else go();
+}
 function renderDailyCareDetail(){
   const r = residents.find(x=>x.id===state.dcResidentId);
   const viewDate = state.dcViewDate || todayIso();
@@ -14271,11 +14958,14 @@ function renderDailyCareDetail(){
     </div>`;
   };
 
+  let _secNo = 0; const sn = () => ++_secNo;
+  const waterOn = moduleOnForHouse(r.house, "water");
   document.getElementById("content").innerHTML = `
     <button class="back-link" onclick="goView('dailycare')">← Back to Care Log</button>
     <div class="profile-head">
       <div class="profile-id">${residentAvatar(r,"lg")}<div><h2>${r.name}</h2><div class="profile-meta">Room ${r.room} · ${houses[0].name} · ${isToday ? TODAY_SHORT : fmtIsoLabel(viewDate)}</div></div></div>
     </div>
+    ${monitorBannerHtml(r)}
 
     <div class="cal-week-nav" style="margin-bottom:14px;">
       <button class="btn small" onclick="shiftDailyCareDate(-1)">‹ Prev Day</button>
@@ -14290,32 +14980,48 @@ function renderDailyCareDetail(){
     ${!isToday ? `<div class="cp-hint" style="margin:0 0 14px; padding:10px 14px; background:var(--surface-alt); border-radius:8px;">Viewing a past day — read-only. Documentation can only be added or changed on today's log.</div>` : ""}
 
     <div class="${isToday ? '' : 'dc-readonly'}">
-    <div class="card dc-section">
-      <div class="dc-section-title"><span class="n">1</span>Meals</div>
+    <div class="card dc-section" id="dc-sec-meals">
+      <div class="dc-section-title"><span class="n">${sn()}</span>Meals</div>
+      ${monitorBoxHtml(r,'meals',isToday)}
       ${mealBlock("breakfast","Breakfast")}
       <hr style="border:none; border-top:1px solid var(--border); margin:14px 0;">
       ${mealBlock("lunch","Lunch")}
       <hr style="border:none; border-top:1px solid var(--border); margin:14px 0;">
       ${mealBlock("dinner","Dinner")}
+      ${dcNotesBox(r, dc, 'meals')}
     </div>
 
-    <div class="card dc-section">
-      <div class="dc-section-title"><span class="n">2</span>PRN medication given</div>
+    ${waterOn ? `<div class="card dc-section" id="dc-sec-water">
+      <div class="dc-section-title"><span class="n">${sn()}</span>Water intake</div>
+      ${monitorBoxHtml(r,'water',isToday)}
+      ${waterSectionHtml(r, viewDate, isToday)}
+      ${dcNotesBox(r, dc, 'water')}
+    </div>` : ""}
+
+    <div class="card dc-section" id="dc-sec-prn">
+      <div class="dc-section-title"><span class="n">${sn()}</span>PRN medication given</div>
+      ${monitorBoxHtml(r,'prn',isToday)}
       ${prnLogSectionHtml(r, viewDate, isToday, dc)}
+      ${dcNotesBox(r, dc, 'prn')}
     </div>
 
-    <div class="card dc-section">
-      <div class="dc-section-title"><span class="n">3</span>Missed medication</div>
+    <div class="card dc-section" id="dc-sec-missed">
+      <div class="dc-section-title"><span class="n">${sn()}</span>Missed medication</div>
+      ${monitorBoxHtml(r,'missed',isToday)}
       ${missedMedSectionHtml(r, viewDate, isToday)}
+      ${dcNotesBox(r, dc, 'missed')}
     </div>
 
-    <div class="card dc-section">
-      <div class="dc-section-title"><span class="n">4</span>Vital signs</div>
+    <div class="card dc-section" id="dc-sec-vitals">
+      <div class="dc-section-title"><span class="n">${sn()}</span>Vital signs</div>
+      ${monitorBoxHtml(r,'vitals',isToday)}
       ${vitalLogSectionHtml(r, viewDate, isToday, dc)}
+      ${dcNotesBox(r, dc, 'vitals')}
     </div>
 
-    <div class="card dc-section">
-      <div class="dc-section-title"><span class="n">5</span>Skin / wound observation${dcStamp(dc,"skin")}</div>
+    <div class="card dc-section" id="dc-sec-skin">
+      <div class="dc-section-title"><span class="n">${sn()}</span>Skin / wound observation${dcStamp(dc,"skin")}</div>
+      ${monitorBoxHtml(r,'skin',isToday)}
       <div class="dc-field"><span class="dc-label">Was anything unusual noted?</span>
         ${chipRow(r.id,"skin.unusualNoted",YN,dc.skin.unusualNoted)}
       </div>
@@ -14326,10 +15032,12 @@ function renderDailyCareDetail(){
       <div class="dc-field"><span class="dc-label">Nurse notified? <span class="dc-required">*</span></span>
         ${chipRow(r.id,"skin.nurseNotified",YN,dc.skin.nurseNotified)}
       </div>` : ""}
+  ${dcNotesBox(r, dc, 'skin')}
     </div>
 
-    <div class="card dc-section">
-      <div class="dc-section-title"><span class="n">6</span>Bowel movement &amp; urination${dcStamp(dc,"elimination")}</div>
+    <div class="card dc-section" id="dc-sec-elimination">
+      <div class="dc-section-title"><span class="n">${sn()}</span>Bowel movement &amp; urination${dcStamp(dc,"elimination")}</div>
+      ${monitorBoxHtml(r,'elimination',isToday)}
       <div class="dc-field"><span class="dc-label">Bowel movement?</span>
         ${chipRow(r.id,"elimination.bm",YN,dc.elimination.bm)}
         ${dc.elimination.bm==="yes" ? `<div class="dc-inline-input"><input type="text" id="dc-bmTime-${r.id}" placeholder="Time" value="${esc(dc.elimination.bmTime)}" onchange="dcTouchField('${r.id}','elimination')"></div>` : ""}
@@ -14357,8 +15065,9 @@ function renderDailyCareDetail(){
       <div class="dc-field"><span class="dc-label">Comments / action taken</span><div class="dc-inline-input"><textarea id="dc-eliminationComments-${r.id}" onchange="dcTouchField('${r.id}','elimination')">${esc(dc.elimination.comments)}</textarea></div></div>
     </div>
 
-    <div class="card dc-section">
-      <div class="dc-section-title"><span class="n">7</span>Incidents${dcStamp(dc,"incident")}</div>
+    <div class="card dc-section" id="dc-sec-incident">
+      <div class="dc-section-title"><span class="n">${sn()}</span>Incidents${dcStamp(dc,"incident")}</div>
+      ${monitorBoxHtml(r,'incident',isToday)}
       <span class="dc-label">Did a fall or injury occur today?</span>
       ${chipRow(r.id,"incident.occurred",YN,dc.incident.occurred)}
       ${dc.incident.occurred==="yes" ? `<div class="dc-inline-input" style="background:var(--alert-bg); border-radius:8px; padding:12px 14px; margin-top:10px;">
@@ -14366,10 +15075,12 @@ function renderDailyCareDetail(){
         <button class="btn small" onclick="startIncidentReportFromDailyCare('${r.id}')">📄 Open Incident Report</button>
         ${(incidentReports[r.id]||[]).length ? `<span class="dc-stamp" style="margin-left:8px;">${(incidentReports[r.id]||[]).length} on file for ${r.name.split(' ')[0]}</span>` : ""}
       </div>` : ""}
+  ${dcNotesBox(r, dc, 'incident')}
     </div>
 
-    <div class="card dc-section">
-      <div class="dc-section-title"><span class="n">8</span>General condition${dcStamp(dc,"general")}</div>
+    <div class="card dc-section" id="dc-sec-general">
+      <div class="dc-section-title"><span class="n">${sn()}</span>General condition${dcStamp(dc,"general")}</div>
+      ${monitorBoxHtml(r,'general',isToday)}
       <div class="dc-field"><span class="dc-label">Overall condition</span>
         ${chipRow(r.id,"general.overall",[{value:"stable",label:"Stable/At Baseline"},{value:"improved",label:"Improved"},{value:"decline",label:"Decline Noted"},{value:"monitoring",label:"Requires Monitoring"}],dc.general.overall)}
       </div>
@@ -14468,6 +15179,7 @@ function render(){
   medPassRemovalsMaybeRefresh();
   residentArchiveMaybeRefresh();
   incidentReportsMaybeRefresh();
+  step3MaybeRefresh();
   foodPhotosMaybeRefresh();
   applyMedPassRemovals();
   renderSidebar();
@@ -14475,6 +15187,7 @@ function render(){
   renderPhoneTabbar();
   if(state.view==="foodphotos"){ renderFoodPhotos(); return; }
   if(state.view==="dashboard") renderDashboard();
+  else if(state.view==="todaysflow") renderTodaysFlowPage();
   else if(state.view==="residents") renderResidents();
   else if(state.view==="resident") renderResidentProfile();
   else if(state.view==="dailycare") renderDailyCareList();
