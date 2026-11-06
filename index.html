@@ -1811,7 +1811,12 @@ function pendingBreakfastPlans(residentFilterFn){
 }
 function pendingBreakfastPlansForHouse(){ return pendingBreakfastPlans(r=>r.house===state.house); }
 
+// Calendar events no longer need approval (Johnna, Nov 6): nothing is listed here any more. Events still marked pending
+// from before are approved automatically by autoApproveCalendarEvents().
 function pendingCalendarEvents(houseFilterFn){
+  return [];
+}
+function pendingCalendarEventsLegacy(houseFilterFn){
   const out = [];
   Object.keys(calendarEvents).forEach(day=>{
     (calendarEvents[day]||[]).forEach(e=>{
@@ -4837,7 +4842,7 @@ async function loadCompanyHouses(){
 // Oct 14, 2026 — version stamp, changed with every delivered file. The page re-reads index.html in the background and,
 // if a newer stamp has been published, shows a "reload" bar (see checkForNewVersion). A phone, computer or iPad that
 // has had the dashboard open for days otherwise keeps running its old copy, and an old copy can lose newer data.
-const APP_BUILD = "2026-11-06e";
+const APP_BUILD = "2026-11-06g";
 const SUPABASE_URL = "https://wxvbbclbgicemegcvvae.supabase.co";
 const SUPABASE_ANON_KEY = "sb_publishable_JC2rWmQ8WOi6-Dhnd_UAXQ_9291ibar";
 const PIN_LOGIN_URL = SUPABASE_URL + "/functions/v1/pin-login";
@@ -7614,7 +7619,7 @@ function allApprovalItemsFlat(){
   });
   Object.keys(calendarEvents).forEach(day=>{
     (calendarEvents[day]||[]).forEach(e=>{
-      if(!e.status) return;
+      if(!e.status || e.autoApproved || e.decidedBy === "Auto-approved") return;
       items.push({ kind:"Calendar event", house:e.house, label:e.t+" — "+fmtIsoLabel(day), addedBy:e.createdBy, addedAt:e.createdAt, status:e.status, decidedBy:e.decidedBy, decidedAt:e.decidedAt });
     });
   });
@@ -12422,7 +12427,7 @@ function syncResidentBirthdayEvents(){
 const CAL_REPEAT_OPTIONS = [
   {value:"none", label:"Does not repeat"},
   {value:"daily", label:"Daily"},
-  {value:"weekly", label:"Specific day(s) of week"},
+  {value:"weekly", label:"Weekly"},
   {value:"biweekly", label:"Every other week"}
 ];
 const CAL_WINDOW_OPTIONS = [ {value:1,label:"1 month"}, {value:3,label:"3 months"}, {value:6,label:"6 months"} ];
@@ -12486,6 +12491,20 @@ function completeCalendarSeries(seriesId){
   if(!series) return;
   series.status = "complete";
   scheduleRender();
+}
+function autoApproveCalendarEvents(){
+  if(!state.userId || !moduleEdit('calendar')) return false; // Managers and Leadership only; they are the ones the database lets change an event
+  let changed = false;
+  const who = currentUser();
+  Object.keys(calendarEvents).forEach(day=>{
+    (calendarEvents[day]||[]).forEach(e=>{
+      if(e.status !== "pending") return;
+      e.status = "approved"; e.autoApproved = true;
+      e.decidedBy = "Auto-approved"; e.decidedById = who ? who.id : null; e.decidedAt = "Just now";
+      changed = true;
+    });
+  });
+  return changed;
 }
 function getCalEvent(day, id){ return (calendarEvents[day]||[]).find(e=>e.id===id); }
 function approveCalendarEvent(day, id){
@@ -12718,12 +12737,11 @@ function saveNewEvent(){
   if(repeat === "none"){
     if(!calendarEvents[day]) calendarEvents[day] = [];
     const newId = isDeviceSupabaseLive() && crypto.randomUUID ? crypto.randomUUID() : calendarEventIdSeq++;
-    calendarEvents[day].push(ce(newId, title, kind, time, notes, who.name, who.id, "Just now", Object.assign({ residentId }, approved ? {} : { status:"pending" })));
+    calendarEvents[day].push(ce(newId, title, kind, time, notes, who.name, who.id, "Just now", { residentId })); // calendar events no longer need approval (Johnna, Nov 6)
   } else {
+    // Weekly / every other week with no days ticked repeats on the weekday the event starts on
     if((repeat==="weekly"||repeat==="biweekly") && !(m.repeatDays||[]).length){
-      m.repeatError = "Pick at least one day of the week.";
-      scheduleRender();
-      return;
+      m.repeatDays = [HYGIENE_DAYS[(parseIso(day).getDay()+6)%7]];
     }
     const windowMonths = m.windowMonths || 1;
     const newSeriesId = isDeviceSupabaseLive() && crypto.randomUUID ? crypto.randomUUID() : calendarSeriesIdSeq++;
@@ -12918,7 +12936,7 @@ function renderCalendarRepeatPicker(modal){
     <div class="cp-hint" style="margin:12px 0 6px;">Repeat</div>
     <div class="chip-row">${CAL_REPEAT_OPTIONS.map(o=>`<button type="button" class="chip-btn ${repeat===o.value?'active':''}" onclick="setCalendarModalRepeat('${o.value}')">${o.label}</button>`).join("")}</div>
     ${(repeat==="weekly"||repeat==="biweekly") ? `
-      <div class="cp-hint" style="margin:10px 0 6px;">On these day(s)</div>
+      <div class="cp-hint" style="margin:10px 0 6px;">On these day(s) <span style="font-weight:400;">— leave blank to repeat on the same day of the week the event starts</span></div>
       <div class="chip-row">${HYGIENE_DAYS.map(d=>`<button type="button" class="chip-btn ${(modal.repeatDays||[]).includes(d)?'active':''}" onclick="toggleCalendarModalDay('${d}')">${d}</button>`).join("")}</div>` : ""}
     ${repeat!=="none" ? `
       <div class="cp-hint" style="margin:10px 0 6px;">Generate this far ahead</div>
@@ -15474,6 +15492,7 @@ function render(){
   step3MaybeRefresh();
   foodPhotosMaybeRefresh();
   applyMedPassRemovals();
+  autoApproveCalendarEvents(); // old pending calendar events are approved automatically (runs before anything is drawn)
   renderSidebar();
   renderTopbar();
   renderPhoneTabbar();
