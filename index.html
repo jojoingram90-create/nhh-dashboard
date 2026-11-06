@@ -831,6 +831,12 @@ function fmtShort(d){ return `${DOW_SHORT[d.getDay()]} ${MONTH_LONG[d.getMonth()
 function fmtDayLabel(d){ return `${DOW_SHORT[d.getDay()]} ${d.getDate()}`; }
 function nowRef(){ return new Date(); } // the real current moment — replaces the old fixed NOW_REF
 function todayIso(){ return isoDate(nowRef()); }
+// The Care Log day runs 7:00 AM to 7:00 AM (Nov 6, 2026, per Johnna: "24 hours to complete a log which resets at 7am each day").
+// Anything documented from 7 AM on one day until 6:59 AM the next goes on the log that started that morning, so the night
+// shift's entries after midnight stay on the same log as the evening before. Past logs are read-only.
+const CARE_DAY_START_HOUR = 7;
+function careDayOfIso(iso){ const t = Date.parse(iso); const d = isNaN(t) ? nowRef() : new Date(t); d.setHours(d.getHours() - CARE_DAY_START_HOUR); return isoDate(d); }
+function careDayIso(){ const d = nowRef(); d.setHours(d.getHours() - CARE_DAY_START_HOUR); return isoDate(d); }
 let TODAY = fmtLong(nowRef());
 let TODAY_SHORT = fmtShort(nowRef());
 let TODAY_ISO = todayIso();
@@ -838,6 +844,8 @@ let TODAY_DOW = DOW_SHORT[nowRef().getDay()];
 function refreshTodayIfNeeded(){
   const iso = todayIso();
   if(iso !== TODAY_ISO){
+    const prevIso = TODAY_ISO;
+    if(typeof state !== "undefined" && state && state.photoDate === prevIso) state.photoDate = iso; // an iPad left on "today" overnight moves to the new day
     TODAY_ISO = iso;
     TODAY = fmtLong(nowRef());
     TODAY_SHORT = fmtShort(nowRef());
@@ -2241,6 +2249,7 @@ const VITAL_TYPES = [
   { key:"pulse", label:"Pulse (bpm)" },
   { key:"respirations", label:"Respirations (/min)" },
   { key:"o2sat", label:"Oxygen Saturation (%)" },
+  { key:"glucose", label:"Blood Glucose (mg/dL)" },
   { key:"pain", label:"Pain" }
 ];
 const YN = [ {value:"yes",label:"Yes"}, {value:"no",label:"No"} ];
@@ -2366,7 +2375,7 @@ let dailyCare = {};
 // elsewhere. Past days are enforced read-only in the UI (renderDailyCareDetail), not here — same
 // "gate the controls, not the function" pattern used for module permissions throughout this app.
 function getDC(residentId, dateKey){
-  const key = dateKey || state.dcViewDate || todayIso();
+  const key = dateKey || state.dcViewDate || careDayIso();
   if(!dailyCare[key]) dailyCare[key] = {};
   if(!dailyCare[key][residentId]) dailyCare[key][residentId] = defaultDailyCare();
   const rec = dailyCare[key][residentId];
@@ -3863,7 +3872,7 @@ function medToggleTime(residentId, medId, timeKey){
 
 function dcCompletionStatus(residentId){
   // Always today's status, regardless of what day a resident's own log might currently be scrolled to.
-  const dc = (dailyCare[todayIso()] || {})[residentId];
+  const dc = (dailyCare[careDayIso()] || {})[residentId];
   if(!dc) return "notstarted";
   if(dc.log && dc.log.length>0) return "inprogress";
   return "notstarted";
@@ -4409,10 +4418,10 @@ const PHOTO_LOCK_HOUR = 17;
 
 function photoLockKey(date, houseId){ return date + "::" + houseId; }
 function photoDeadlinePassed(date){ return nowRef() > new Date(date+"T"+String(PHOTO_LOCK_HOUR).padStart(2,"0")+":00:00"); }
-// A posted photo is locked once its day's 5 PM has passed. Empty slots, photos still uploading, and photos
-// whose upload failed are never locked, and Leadership can replace anything.
+// Nov 2026 (Johnna): a day's photos lock at 5 PM that same day -- posted or not, so a past day can never be posted to by
+// mistake. Only a photo still uploading or one whose upload failed stays open, and Leadership can always post or replace.
 function photoSlotLocked(date, entry){
-  if(!entry || entry.pending || entry.failed) return false;
+  if(entry && (entry.pending || entry.failed)) return false; // a photo taken before the deadline is never stranded by it
   if(isSystemAdmin()) return false;
   return photoDeadlinePassed(date);
 }
@@ -4498,6 +4507,30 @@ async function saveFoodPhotosToDevice(houseId, date, cats){
   state.photoSaveNote = files.length === 1 ? "The photo was downloaded to this device." : `${files.length} photos were downloaded to this device.`;
   scheduleRender();
 }
+// Nov 2026: several iPads stopped responding to Upload until the app was closed completely. The old Upload was a label
+// pointing at a hidden file input that lives inside the page content, which the app redraws many times a minute; on a
+// Home Screen app iOS can lose the picker's answer when that input has been replaced or the app has been backgrounded.
+// Now every tap makes a brand-new picker outside the page content (never redrawn), opened straight from the tap, and
+// the old one is thrown away -- so there is nothing left over to get stuck.
+let foodPhotoPickerEl = null;
+function dropFoodPhotoPicker(){ if(foodPhotoPickerEl){ try{ foodPhotoPickerEl.remove(); }catch(e){} foodPhotoPickerEl = null; } }
+function pickFoodPhoto(houseId, cat){
+  beginPhotoPick();
+  dropFoodPhotoPicker();
+  const inp = document.createElement("input");
+  inp.type = "file"; inp.accept = "image/*";
+  inp.setAttribute("aria-hidden", "true"); inp.tabIndex = -1;
+  inp.style.cssText = "position:fixed; left:-9999px; top:0; width:1px; height:1px; opacity:0;";
+  inp.addEventListener("change", ()=>{
+    handlePhotoUpload({ target: inp }, houseId, cat);
+    setTimeout(()=>{ if(foodPhotoPickerEl === inp) dropFoodPhotoPicker(); }, 0);
+  });
+  inp.addEventListener("cancel", ()=>{ endPhotoPick(); });
+  document.body.appendChild(inp);
+  foodPhotoPickerEl = inp;
+  try{ inp.click(); }catch(e){ console.warn("Opening the photo picker failed:", e); endPhotoPick(); dropFoodPhotoPicker(); }
+}
+function reloadAppForPhotos(){ try{ location.reload(); }catch(e){} }
 function handlePhotoUpload(evt, houseId, cat){
   endPhotoPick(); // the camera is done — normal locking resumes
   const file = evt.target.files[0];
@@ -4590,10 +4623,8 @@ function renderHousePhotoCard(h){
 
     const savePrompt = (entry && entry.img && state.photoSavePrompt && state.photoSavePrompt[foodPhotoSaveKey(h.id, state.photoDate, c)])
       ? `<div class="photo-save-prompt"><button type="button" class="btn small primary" onclick="saveFoodPhotosToDevice('${h.id}','${state.photoDate}',['${c}'])">💾 Save to this iPad</button><button type="button" class="photo-save-x" aria-label="Not now" onclick="dismissPhotoSavePrompt('${h.id}','${state.photoDate}','${c}')">Not now</button></div>` : "";
-    const inputId = `photo-${h.id}-${c}-${state.photoDate}`;
     const uploadControl = (canUploadHere && !locked) ? `
-      <label class="btn small" for="${inputId}" onclick="beginPhotoPick()">${entry?"Replace":"Upload"}</label>
-      <input type="file" accept="image/*" id="${inputId}" style="display:none" onchange="handlePhotoUpload(event,'${h.id}','${c}')">` : "";
+      <button type="button" class="btn small" onclick="pickFoodPhoto('${h.id}','${c}')">${entry?"Replace":"Upload"}</button>` : "";
     return `<div class="photo-slot">
       ${media}
       <div style="font-weight:700; font-size:13px;">${meta.label}</div>
@@ -4601,9 +4632,11 @@ function renderHousePhotoCard(h){
       ${attribution}
       ${savePrompt}
       ${uploadControl}
+      ${(canUploadHere && locked && !entry) ? `<div class="cp-hint" style="margin:4px 0 0;">🔒 Closed at 5 PM — Leadership can still add it</div>` : ""}
     </div>`;
   }).join("");
   const photoCount = MEAL_CATS.filter(c=>dayData[c] && dayData[c].img).length;
+  const stuck = canUploadHere ? `<div class="photo-saveall"><button type="button" class="btn small" onclick="reloadAppForPhotos()">↻ Upload stuck? Reload the app</button> <span class="cp-hint" style="margin:0;">(photos already taken are kept; you'll sign in again)</span></div>` : "";
   const saveAll = photoCount ? `<div class="photo-saveall"><button type="button" class="btn small" onclick="saveFoodPhotosToDevice('${h.id}','${state.photoDate}')">💾 Save ${photoCount === 3 ? "all 3" : photoCount} to this iPad</button></div>` : "";
 
   return `<div class="card house-photo-card${canUploadHere ? ' house-photo-card--mine' : ''}">
@@ -4612,6 +4645,7 @@ function renderHousePhotoCard(h){
     </div>
     <div class="photo-grid">${slots}</div>
     ${saveAll}
+    ${stuck}
   </div>`;
 }
 function renderFoodPhotos(){
@@ -4760,7 +4794,7 @@ async function loadCompanyHouses(){
 // Oct 14, 2026 — version stamp, changed with every delivered file. The page re-reads index.html in the background and,
 // if a newer stamp has been published, shows a "reload" bar (see checkForNewVersion). A phone, computer or iPad that
 // has had the dashboard open for days otherwise keeps running its old copy, and an old copy can lose newer data.
-const APP_BUILD = "2026-10-25d";
+const APP_BUILD = "2026-11-06b";
 const SUPABASE_URL = "https://wxvbbclbgicemegcvvae.supabase.co";
 const SUPABASE_ANON_KEY = "sb_publishable_JC2rWmQ8WOi6-Dhnd_UAXQ_9291ibar";
 const PIN_LOGIN_URL = SUPABASE_URL + "/functions/v1/pin-login";
@@ -6854,18 +6888,23 @@ async function syncLiveHouseToSupabase(){
       // records that backfill exists to catch. Past days are read-only in the UI, and getDC()'s writes
       // always resolve to state.dcViewDate || todayIso() — dcViewDate is never set while actively
       // documenting, so today is the only date that can ever need syncing.
-      const todayCare = dailyCare[TODAY_ISO] || {};
+      // Nov 2026: the Care Log day runs 7 AM to 7 AM (careDayIso), so the current log, the one that closed at 7 AM (edits made
+      // just before it closed), and today's calendar date are all sent.
+      const careKeys = Array.from(new Set([careDayIso(), addDaysIso(careDayIso(), -1), TODAY_ISO]));
+      for(const dateKey of careKeys){
+      const todayCare = dailyCare[dateKey] || {};
       for(const r of localList){
         const dc = todayCare[r.id];
         if(!dc || (Object.keys(dc.meta).length === 0 && dc.log.length === 0)) continue;
         const { error: dcErr } = await sbClient.from("daily_care_logs")
-          .upsert(dailyCareLogRowForSupabase(r.id, houseId, TODAY_ISO, dc), { onConflict: "id" });
+          .upsert(dailyCareLogRowForSupabase(r.id, houseId, dateKey, dc), { onConflict: "id" });
         if(dcErr) console.error("Supabase daily care log sync failed:", dcErr);
         for(const entry of dc.log){
           const { error: dcuErr } = await sbClient.from("daily_care_log_updates")
             .upsert(dailyCareLogUpdateRowForSupabase(dc, entry), { onConflict: "id" });
           if(dcuErr) console.error("Supabase daily care log update sync failed:", dcuErr);
         }
+      }
       }
     }
   } catch(err){
@@ -6956,6 +6995,7 @@ function lockApp(auto){
   visitorRequests = []; visitorRequestsFetchedAt = 0; visitorRequestsHouse = null; // kiosk visitor names are not kept in memory while locked
   pinBuffer = "";
   pinError = false;
+  state.photoDate = todayIso();
   render();
 }
 function resetIdleTimer(){
@@ -9621,10 +9661,10 @@ function openDailyCare(id){ state.view="dailycaredetail"; state.dcResidentId=id;
 // Prev/Next Day on a resident's Daily Care Log. Only ever moves state.dcViewDate — never past today,
 // since a house's daily documentation obviously can't exist yet for a day that hasn't happened.
 function shiftDailyCareDate(delta){
-  const base = state.dcViewDate || todayIso();
+  const base = state.dcViewDate || careDayIso();
   const next = addDaysIso(base, delta);
-  if(next > todayIso()) return;
-  state.dcViewDate = next === todayIso() ? null : next;
+  if(next > careDayIso()) return;
+  state.dcViewDate = next === careDayIso() ? null : next;
   scheduleRender();
 }
 function setProfileTab(t){ state.profileTab=t; render(); }
@@ -9806,9 +9846,13 @@ function renderTopbar(){
 // Compact "On the Calendar Today" card — one row per event, sorted by time, with a colored bar (same
 // per-kind colors as the full Calendar's own chips: green=activity, blue=visit, orange=appointment,
 // purple=birthday) instead of the old individually-colored chip grid.
+// Dashboard calendar section (Oct 25, 2026, per Johnna): only appears when something is scheduled for today
+// (activities, visits, appointments) -- nothing is shown on an empty day.
 function renderTodayEvents(){
-  const todays = (calendarEvents[TODAY_ISO] || []).filter(e=>!e.deleted && e.status!=="denied" && calendarEventInHouse(e))
+  const day = todayIso();
+  const todays = (calendarEvents[day] || []).filter(e=>!e.deleted && e.status!=="denied" && calendarEventInHouse(e))
     .slice().sort((a,b)=>(a.time||"99:99").localeCompare(b.time||"99:99"));
+  if(!todays.length) return "";
   return `
   <div class="section">
     <div class="card cal-today-card">
@@ -9816,14 +9860,12 @@ function renderTodayEvents(){
         <span class="cal-today-label">On the Calendar Today</span>
         <button type="button" class="btn small" onclick="goView('calendar')">See Full Calendar</button>
       </div>
-      ${todays.length
-        ? todays.map(e=>`
-          <button type="button" class="cal-today-row" onclick="goView('calendar'); openEventDetail('${TODAY_ISO}',${jsId(e.id)});">
+      ${todays.map(e=>`
+          <button type="button" class="cal-today-row" onclick="goView('calendar'); openEventDetail('${day}',${jsId(e.id)});">
             <div class="cal-today-time">${e.time ? fmtEventTime(e.time) : ""}</div>
             <span class="cal-today-bar ${e.k}"></span>
             <div class="cal-today-title">${esc(e.t)}</div>
-          </button>`).join("")
-        : `<div style="font-size:13px; color:var(--text-faint); font-style:italic; padding:4px;">No activities, visits, or appointments scheduled for today.</div>`}
+          </button>`).join("")}
     </div>
   </div>`;
 }
@@ -10267,9 +10309,9 @@ function renderDashboard(){
 
   ${renderDueNowBanner()}
 
-  ${renderDashboardModules()}
+  ${renderTodayEvents()}
 
-  ${renderTodayEvents()}`;
+  ${renderDashboardModules()}`;
   document.getElementById("content").innerHTML = html;
 }
 
@@ -10306,7 +10348,7 @@ function dashCurrentMealKey(){
 function setDashMeal(mealKey){ state.dashMealKey = mealKey; scheduleRender(); }
 function quickLogMeal(residentId, mealKey, value){
   const u = currentUser(); if(!u) return;
-  const dc = getDC(residentId, todayIso());
+  const dc = getDC(residentId, careDayIso());
   dc.meals[mealKey].pct = value;
   touchSection(dc, mealKey, u);
   scheduleRender();
@@ -10316,17 +10358,17 @@ function renderMealsModule(){
   const mealKey = dashCurrentMealKey();
   const labels = { breakfast:"Breakfast", lunch:"Lunch", dinner:"Dinner" };
   const list = houseResidents().slice().sort((a,b)=>{
-    const la = !!getDC(a.id, todayIso()).meals[mealKey].pct, lb = !!getDC(b.id, todayIso()).meals[mealKey].pct;
+    const la = !!getDC(a.id, careDayIso()).meals[mealKey].pct, lb = !!getDC(b.id, careDayIso()).meals[mealKey].pct;
     return (la - lb) || String(a.room||"").localeCompare(String(b.room||""), undefined, {numeric:true}) || a.name.localeCompare(b.name);
   });
-  const logged = list.filter(r=>!!getDC(r.id, todayIso()).meals[mealKey].pct).length;
+  const logged = list.filter(r=>!!getDC(r.id, careDayIso()).meals[mealKey].pct).length;
   const head = `<button type="button" class="dash-mod-head" aria-expanded="${open}" onclick="toggleDashModule('meals')">
       <span class="ic">🍽</span><span class="t">Meals — ${labels[mealKey]}</span>
       <span class="s">${logged} of ${list.length} logged</span><span class="car">${open?"▾":"▸"}</span></button>`;
   if(!open) return `<div class="card dash-mod">${head}</div>`;
   const tabs = ["breakfast","lunch","dinner"].map(k=>`<button type="button" class="chip-btn ${k===mealKey?"active":""}" onclick="setDashMeal('${k}')">${labels[k]}</button>`).join("");
   const rows = list.length ? list.map(r=>{
-    const cur = getDC(r.id, todayIso()).meals[mealKey].pct;
+    const cur = getDC(r.id, careDayIso()).meals[mealKey].pct;
     return `<div class="dash-meal-row">
       <div class="who"><span class="nm">${esc(r.name)}</span><span class="rm">Room ${esc(r.room)}</span></div>
       <div class="chip-row">${MEAL_PCT.map(o=>`<button type="button" class="chip-btn ${cur===o.value?"active":""}" onclick="quickLogMeal('${r.id}','${mealKey}','${o.value}')">${o.label}</button>`).join("")}</div>
@@ -13488,7 +13530,7 @@ function renderDailyCareList(){
   const statusMeta = { inprogress:["fall","In progress"], notstarted:["neutral","Not started"] };
   document.getElementById("content").innerHTML = `
   <div class="section">
-    <div class="section-head"><h2>Care Log — ${TODAY_SHORT}</h2><span class="hint">Click a resident to document care services rendered today</span></div>
+    <div class="section-head"><h2>Care Log — ${fmtIsoLabel(careDayIso())}</h2><span class="hint">Click a resident to document care. Each log runs 7 AM to 7 AM.</span></div>
     <div class="resident-grid">
       ${list.map(r=>{
         const [kind,label] = statusMeta[dcCompletionStatus(r.id)];
@@ -13740,7 +13782,7 @@ function addPrnLog(residentId){
   if(missing.length){ state.logFormError["prn-"+residentId] = "Still needed before this can be logged: " + missing.join(", ") + "."; scheduleRender(); return; }
   const now = nowRef();
   (prnLogs[residentId] = prnLogs[residentId] || []).push({
-    id:newCareLogId(), seq:careLogSeq++, date:isoDate(now), time, medication,
+    id:newCareLogId(), seq:careLogSeq++, date:careDayIso(), time, medication,
     dose:(d.dose||"").trim(), reason:(d.reason||"").trim(), response:(d.response||"").trim(),
     byId:u.id, byName:u.name, createdAt:now.toISOString(), synced:false
   });
@@ -13820,7 +13862,7 @@ function vitalLogsForDay(residentId, dateIso){
 }
 // Form field ids: vl-time-<res>, vl-<fieldKey>-<res>. fieldKey -> draft key.
 const VITAL_FORM_FIELDS = {
-  temperature:["temperature"], bp:["bpsys","bpdia"], pulse:["pulse"], respirations:["respirations"], o2sat:["o2sat"],
+  temperature:["temperature"], bp:["bpsys","bpdia"], pulse:["pulse"], respirations:["respirations"], o2sat:["o2sat"], glucose:["glucose"],
   pain:["painrating","painloc","paindesc"]
 };
 function vitalDraftRead(residentId){
@@ -13853,7 +13895,7 @@ function addVitalLog(residentId, typeKey){
   if(missing.length){ state.logFormError[errKey] = "Still needed before this can be confirmed: " + missing.join(", ") + "."; scheduleRender(); return; }
   const now = nowRef();
   (vitalLogs[residentId] = vitalLogs[residentId] || []).push({
-    id:newCareLogId(), seq:careLogSeq++, date:isoDate(now), time, type:typeKey, value,
+    id:newCareLogId(), seq:careLogSeq++, date:careDayIso(), time, type:typeKey, value,
     byId:u.id, byName:u.name, createdAt:now.toISOString(), synced:false
   });
   (VITAL_FORM_FIELDS[typeKey]||[]).forEach(k=>{ delete d[k]; });
@@ -13912,7 +13954,7 @@ function syncRefusalToMissedLog(residentId, medId, anchor, status, reason){
   if(!med || !who) return;
   const a = medAnchorsForMed(med).find(x=>x.anchor===anchor);
   const doseLabel = a ? a.label : "";
-  const day = state.dcViewDate || todayIso();
+  const day = state.dcViewDate || careDayIso();
   const list = (missedMedLogs[residentId] = missedMedLogs[residentId] || []);
   const existing = list.find(e=>e.date===day && e.medication===med.name && (e.doseLabel||"")===doseLabel);
   if(status === "refuse"){
@@ -13944,8 +13986,8 @@ function syncRefusalToMissedLog(residentId, medId, anchor, status, reason){
 // hand-over and report reads one place. Matching is by routine+time, or by day+time+type/medication, so nothing doubles.
 function mirrorRoutineLogToCareLog(residentId, item, occTime, vitalType, value, who, atIso){
   if(!item || !occTime || !residentId) return;
-  const day = TODAY_ISO, ref = item.id + "|" + day + "|" + occTime;
   const when = atIso || new Date().toISOString();
+  const calDay = TODAY_ISO, ref = item.id + "|" + calDay + "|" + occTime, day = careDayOfIso(when);
   const by = who || {};
   if(item.type === "vital"){
     const type = vitalType || item.vitalType; if(!type) return;
@@ -14001,7 +14043,7 @@ function confirmMissedMeds(residentId){
   missedNoteRead(residentId);
   const sel = (state.missedSel||{})[residentId] || {};
   const note = ((state.missedNote||{})[residentId] || "").trim();
-  const now = nowRef(), today = isoDate(now);
+  const now = nowRef(), today = careDayIso();
   const already = missedMedLogsForDay(residentId, today);
   const blocks = missedMedBlocks(residentId).filter(b=>sel[b.key] && !already.some(e=>e.medication===b.medication && e.doseLabel===b.doseLabel));
   if(!blocks.length) return;
@@ -14656,7 +14698,7 @@ const STEP3_REFRESH_MS = 45000;
 let step3Timer = null, step3Loading = false, step3RefreshAt = 0;
 function step3Sig(){
   const ids = houseResidents().map(r=>r.id);
-  return JSON.stringify([houseModules[state.house]||{}, ids.map(id=>[id, (waterLogs[id]||[]).length, waterTotalOz(id, todayIso()), activeMonitors(id).map(m=>m.id)])]);
+  return JSON.stringify([houseModules[state.house]||{}, ids.map(id=>[id, (waterLogs[id]||[]).length, waterTotalOz(id, careDayIso()), activeMonitors(id).map(m=>m.id)])]);
 }
 function step3MaybeRefresh(force){
   if(!supabaseSession || !state.userId || step3Loading || !SUPABASE_LIVE_HOUSE_IDS.has(state.house)) return;
@@ -14743,7 +14785,7 @@ function addWater(residentId, oz){
   oz = Number(oz);
   if(!(oz > 0 && oz <= 100)) return false;
   const now = nowRef();
-  (waterLogs[residentId] = waterLogs[residentId] || []).push({ id:newCareLogId(), seq:careLogSeq++, date:isoDate(now), oz, byId:u.id, byName:u.name, at:now.toISOString(), synced:false });
+  (waterLogs[residentId] = waterLogs[residentId] || []).push({ id:newCareLogId(), seq:careLogSeq++, date:careDayIso(), oz, byId:u.id, byName:u.name, at:now.toISOString(), synced:false });
   scheduleRender();
   flushStep3Resident(residentId).then(()=>{}, e=>console.warn("Water sync failed:", e));
   return true;
@@ -14797,7 +14839,7 @@ function waterButtonsHtml(residentId){
 }
 function renderWaterModule(){
   const open = dashModuleIsOpen("water");
-  const day = todayIso();
+  const day = careDayIso();
   const list = houseResidents().slice().sort((a,b)=>String(a.room||"").localeCompare(String(b.room||""), undefined, {numeric:true}) || a.name.localeCompare(b.name));
   const atGoal = list.filter(r=>waterTotalOz(r.id, day) >= waterGoalOz(r.id)).length;
   const head = `<button type="button" class="dash-mod-head" aria-expanded="${open}" onclick="toggleDashModule('water')">
@@ -14942,8 +14984,8 @@ function openCareLogAt(residentId, sectionKey){
 }
 function renderDailyCareDetail(){
   const r = residents.find(x=>x.id===state.dcResidentId);
-  const viewDate = state.dcViewDate || todayIso();
-  const isToday = viewDate === todayIso();
+  const viewDate = state.dcViewDate || careDayIso();
+  const isToday = viewDate === careDayIso();
   const dc = getDC(r.id, viewDate);
   const id = currentUser();
 
@@ -14963,13 +15005,13 @@ function renderDailyCareDetail(){
   document.getElementById("content").innerHTML = `
     <button class="back-link" onclick="goView('dailycare')">← Back to Care Log</button>
     <div class="profile-head">
-      <div class="profile-id">${residentAvatar(r,"lg")}<div><h2>${r.name}</h2><div class="profile-meta">Room ${r.room} · ${houses[0].name} · ${isToday ? TODAY_SHORT : fmtIsoLabel(viewDate)}</div></div></div>
+      <div class="profile-id">${residentAvatar(r,"lg")}<div><h2>${r.name}</h2><div class="profile-meta">Room ${r.room} · ${houses[0].name} · ${fmtIsoLabel(viewDate)}</div></div></div>
     </div>
     ${monitorBannerHtml(r)}
 
     <div class="cal-week-nav" style="margin-bottom:14px;">
       <button class="btn small" onclick="shiftDailyCareDate(-1)">‹ Prev Day</button>
-      <span class="hint" style="margin:0;">${isToday ? `Today — ${TODAY_SHORT}` : fmtIsoLabel(viewDate)}</span>
+      <span class="hint" style="margin:0;">${isToday ? `Current log — ${fmtIsoLabel(viewDate)}, open until 7:00 AM tomorrow` : fmtIsoLabel(viewDate)}</span>
       <button class="btn small" onclick="shiftDailyCareDate(1)" ${isToday ? "disabled" : ""}>Next Day ›</button>
       ${!isToday ? `<button class="btn small" onclick="state.dcViewDate=null; scheduleRender();">Back to Today</button>` : ""}
     </div>
@@ -14977,7 +15019,7 @@ function renderDailyCareDetail(){
       <span class="dc-savebar-text">Every save records who updated this log and when — see Update history at the bottom.</span>
       <span class="dc-savebar-right">${(state.dcSavedAt||{})[r.id] && Date.now()-state.dcSavedAt[r.id] < 2500 ? `<span class="dc-savebar-flash">✓ Saved</span>` : ""}<button class="btn primary small" onclick="saveDailyCare('${r.id}')">Save Update</button></span>
     </div>` : ""}
-    ${!isToday ? `<div class="cp-hint" style="margin:0 0 14px; padding:10px 14px; background:var(--surface-alt); border-radius:8px;">Viewing a past day — read-only. Documentation can only be added or changed on today's log.</div>` : ""}
+    ${!isToday ? `<div class="cp-hint" style="margin:0 0 14px; padding:10px 14px; background:var(--surface-alt); border-radius:8px;">Viewing a past log — read-only. Documentation can only be added or changed on the current log (each log runs 7 AM to 7 AM).</div>` : ""}
 
     <div class="${isToday ? '' : 'dc-readonly'}">
     <div class="card dc-section" id="dc-sec-meals">
@@ -15158,6 +15200,7 @@ function printProfile(id){
 
 function render(){
   refreshTodayIfNeeded();
+  if(state.view !== "foodphotos") state.photoDate = todayIso(); // Food Photos always opens on today, however far back someone browsed
   schedulePersist();
   if(!state.userId){
     document.getElementById("app").style.visibility = "hidden";
@@ -15212,7 +15255,12 @@ function render(){
 /* Re-lock whenever the tab/app is backgrounded (covers the iPad sleeping or switching apps) */
 document.addEventListener("visibilitychange", () => {
   if(document.hidden) lockApp(true);
-  else if(photoPickUntil) setTimeout(()=>{ photoPickUntil = 0; }, 3000); // back from the camera; a cancelled picker does not keep the grace open
+  else{
+    if(photoPickUntil) setTimeout(()=>{ photoPickUntil = 0; }, 3000); // back from the camera; a cancelled picker does not keep the grace open
+    // back on screen: pick up a new day and redraw Food Photos with fresh controls (the picker itself is left alone so the
+    // photo that was just taken can still arrive)
+    try{ refreshTodayIfNeeded(); if(state.userId && state.view === "foodphotos") scheduleRender(); }catch(e){}
+  }
 });
 window.addEventListener("pagehide", () => lockApp(true));
 document.addEventListener("keydown", (e) => { if(e.key === "Escape") closeLightbox(); });
