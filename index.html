@@ -836,6 +836,9 @@ function todayIso(){ return isoDate(nowRef()); }
 // shift's entries after midnight stay on the same log as the evening before. Past logs are read-only.
 const CARE_DAY_START_HOUR = 7;
 function careDayOfIso(iso){ const t = Date.parse(iso); const d = isNaN(t) ? nowRef() : new Date(t); d.setHours(d.getHours() - CARE_DAY_START_HOUR); return isoDate(d); }
+// A log stays editable for 24 hours after its own day ends (Nov 6, 2026, per Johnna): the current log (this 7 AM to 7 AM) and the
+// one before it are both open; anything older is read-only.
+function careLogEditable(dateIso){ const c = careDayIso(); return dateIso === c || dateIso === addDaysIso(c, -1); }
 function careDayIso(){ const d = nowRef(); d.setHours(d.getHours() - CARE_DAY_START_HOUR); return isoDate(d); }
 let TODAY = fmtLong(nowRef());
 let TODAY_SHORT = fmtShort(nowRef());
@@ -4794,7 +4797,7 @@ async function loadCompanyHouses(){
 // Oct 14, 2026 — version stamp, changed with every delivered file. The page re-reads index.html in the background and,
 // if a newer stamp has been published, shows a "reload" bar (see checkForNewVersion). A phone, computer or iPad that
 // has had the dashboard open for days otherwise keeps running its old copy, and an old copy can lose newer data.
-const APP_BUILD = "2026-11-06b";
+const APP_BUILD = "2026-11-06c";
 const SUPABASE_URL = "https://wxvbbclbgicemegcvvae.supabase.co";
 const SUPABASE_ANON_KEY = "sb_publishable_JC2rWmQ8WOi6-Dhnd_UAXQ_9291ibar";
 const PIN_LOGIN_URL = SUPABASE_URL + "/functions/v1/pin-login";
@@ -6888,9 +6891,9 @@ async function syncLiveHouseToSupabase(){
       // records that backfill exists to catch. Past days are read-only in the UI, and getDC()'s writes
       // always resolve to state.dcViewDate || todayIso() — dcViewDate is never set while actively
       // documenting, so today is the only date that can ever need syncing.
-      // Nov 2026: the Care Log day runs 7 AM to 7 AM (careDayIso), so the current log, the one that closed at 7 AM (edits made
-      // just before it closed), and today's calendar date are all sent.
-      const careKeys = Array.from(new Set([careDayIso(), addDaysIso(careDayIso(), -1), TODAY_ISO]));
+      // Nov 2026: the Care Log day runs 7 AM to 7 AM (careDayIso) and a log stays editable for 24 hours after it ends, so the current
+      // log, the previous one, the one that just became read-only (edits made just before) and today's calendar date are all sent.
+      const careKeys = Array.from(new Set([careDayIso(), addDaysIso(careDayIso(), -1), addDaysIso(careDayIso(), -2), TODAY_ISO]));
       for(const dateKey of careKeys){
       const todayCare = dailyCare[dateKey] || {};
       for(const r of localList){
@@ -9613,6 +9616,7 @@ function setHouse(h){
   render();
 }
 function goView(v){
+  if(v!=="dailycaredetail") state.dcViewDate = null; // never leave a browsed past log behind for other screens to write into
   if(v!=="manageresidents") state.archDraft = null;
   state.archRestorePending = null;
   if(v!=="archivedresidents" && v!=="resident"){ state.archNotice = ""; state.archError = ""; }
@@ -13782,7 +13786,7 @@ function addPrnLog(residentId){
   if(missing.length){ state.logFormError["prn-"+residentId] = "Still needed before this can be logged: " + missing.join(", ") + "."; scheduleRender(); return; }
   const now = nowRef();
   (prnLogs[residentId] = prnLogs[residentId] || []).push({
-    id:newCareLogId(), seq:careLogSeq++, date:careDayIso(), time, medication,
+    id:newCareLogId(), seq:careLogSeq++, date:(state.dcViewDate || careDayIso()), time, medication,
     dose:(d.dose||"").trim(), reason:(d.reason||"").trim(), response:(d.response||"").trim(),
     byId:u.id, byName:u.name, createdAt:now.toISOString(), synced:false
   });
@@ -13895,7 +13899,7 @@ function addVitalLog(residentId, typeKey){
   if(missing.length){ state.logFormError[errKey] = "Still needed before this can be confirmed: " + missing.join(", ") + "."; scheduleRender(); return; }
   const now = nowRef();
   (vitalLogs[residentId] = vitalLogs[residentId] || []).push({
-    id:newCareLogId(), seq:careLogSeq++, date:careDayIso(), time, type:typeKey, value,
+    id:newCareLogId(), seq:careLogSeq++, date:(state.dcViewDate || careDayIso()), time, type:typeKey, value,
     byId:u.id, byName:u.name, createdAt:now.toISOString(), synced:false
   });
   (VITAL_FORM_FIELDS[typeKey]||[]).forEach(k=>{ delete d[k]; });
@@ -14043,7 +14047,7 @@ function confirmMissedMeds(residentId){
   missedNoteRead(residentId);
   const sel = (state.missedSel||{})[residentId] || {};
   const note = ((state.missedNote||{})[residentId] || "").trim();
-  const now = nowRef(), today = careDayIso();
+  const now = nowRef(), today = (state.dcViewDate || careDayIso());
   const already = missedMedLogsForDay(residentId, today);
   const blocks = missedMedBlocks(residentId).filter(b=>sel[b.key] && !already.some(e=>e.medication===b.medication && e.doseLabel===b.doseLabel));
   if(!blocks.length) return;
@@ -14780,24 +14784,24 @@ function waterTotalOz(residentId, dateIso){ return waterEntriesForDay(residentId
 function cupsNum(oz){ return String(Math.round((oz/CUP_OZ)*10)/10); }
 function cupsLabel(oz){ const c = Math.round((oz/CUP_OZ)*10)/10; return cupsNum(oz) + (c===1 ? " cup" : " cups"); }
 function waterEntryLabel(oz){ return oz===8 ? "1 cup (8 oz)" : (oz===4 ? "½ cup (4 oz)" : `${oz} oz`); }
-function addWater(residentId, oz){
+function addWater(residentId, oz, dateIso){
   const u = currentUser(); if(!u) return false;
   oz = Number(oz);
   if(!(oz > 0 && oz <= 100)) return false;
   const now = nowRef();
-  (waterLogs[residentId] = waterLogs[residentId] || []).push({ id:newCareLogId(), seq:careLogSeq++, date:careDayIso(), oz, byId:u.id, byName:u.name, at:now.toISOString(), synced:false });
+  (waterLogs[residentId] = waterLogs[residentId] || []).push({ id:newCareLogId(), seq:careLogSeq++, date:(dateIso && careLogEditable(dateIso) ? dateIso : careDayIso()), oz, byId:u.id, byName:u.name, at:now.toISOString(), synced:false });
   scheduleRender();
   flushStep3Resident(residentId).then(()=>{}, e=>console.warn("Water sync failed:", e));
   return true;
 }
 function toggleWaterCustom(residentId){ state.waterCustomOpen = state.waterCustomOpen || {}; state.waterCustomOpen[residentId] = !state.waterCustomOpen[residentId]; state.waterCustomError = null; scheduleRender(); }
-function addWaterCustom(residentId){
+function addWaterCustom(residentId, dateIso){
   const el = document.getElementById("water-custom-" + residentId);
   const v = el ? Number(el.value) : NaN;
   if(!(v > 0 && v <= 100)){ state.waterCustomError = { id:residentId, msg:"Enter the amount in ounces (1 cup = 8 oz), up to 100." }; scheduleRender(); return; }
   state.waterCustomError = null;
   if(state.waterCustomOpen) state.waterCustomOpen[residentId] = false;
-  addWater(residentId, v);
+  addWater(residentId, v, dateIso);
 }
 function canRemoveWaterEntry(e){ const u = currentUser(); return !!u && (u.id === e.byId || isManagerOrLeadershipUser()); }
 function removeWaterEntry(residentId, id){
@@ -14827,15 +14831,16 @@ function waterBarHtml(residentId, dateIso){
   return `<div class="water-cell"><div class="water-bar ${total>=goal?"done":""}" role="img" aria-label="${cupsNum(total)} of ${cupsNum(goal)} cups"><i style="width:${pct}%"></i></div>
     <div class="water-num">${cupsNum(total)} of ${cupsNum(goal)} cups${total>=goal?" ✓":""}</div></div>`;
 }
-function waterButtonsHtml(residentId){
+function waterButtonsHtml(residentId, dateIso){
+  const dj = dateIso ? ",'" + dateIso + "'" : "";
   const open = !!(state.waterCustomOpen && state.waterCustomOpen[residentId]);
   const err = state.waterCustomError && state.waterCustomError.id===residentId ? `<div class="cp-hint" style="color:var(--alert-text); width:100%;">${esc(state.waterCustomError.msg)}</div>` : "";
   return `<div class="chip-row">
-      <button type="button" class="chip-btn" onclick="addWater(${jsId(residentId)},8)">+ 1 cup</button>
-      <button type="button" class="chip-btn" onclick="addWater(${jsId(residentId)},4)">+ ½ cup</button>
+      <button type="button" class="chip-btn" onclick="addWater(${jsId(residentId)},8${dj})">+ 1 cup</button>
+      <button type="button" class="chip-btn" onclick="addWater(${jsId(residentId)},4${dj})">+ ½ cup</button>
       <button type="button" class="chip-btn ${open?"active":""}" onclick="toggleWaterCustom(${jsId(residentId)})">Custom</button>
     </div>
-    ${open ? `<div class="dc-inline-input" style="display:flex; gap:8px; align-items:center; flex-wrap:wrap; width:100%;"><input type="number" id="water-custom-${residentId}" min="1" max="100" step="0.5" inputmode="decimal" placeholder="Ounces" style="max-width:130px;"><button type="button" class="btn small primary" onclick="addWaterCustom(${jsId(residentId)})">Add</button><span class="cp-hint" style="margin:0;">1 cup = 8 oz</span>${err}</div>` : ""}`;
+    ${open ? `<div class="dc-inline-input" style="display:flex; gap:8px; align-items:center; flex-wrap:wrap; width:100%;"><input type="number" id="water-custom-${residentId}" min="1" max="100" step="0.5" inputmode="decimal" placeholder="Ounces" style="max-width:130px;"><button type="button" class="btn small primary" onclick="addWaterCustom(${jsId(residentId)}${dj})">Add</button><span class="cp-hint" style="margin:0;">1 cup = 8 oz</span>${err}</div>` : ""}`;
 }
 function renderWaterModule(){
   const open = dashModuleIsOpen("water");
@@ -14849,7 +14854,7 @@ function renderWaterModule(){
   const rows = list.length ? list.map(r=>`<div class="dash-meal-row">
       <div class="who"><span class="nm">${esc(r.name)}</span><span class="rm">Room ${esc(r.room)}</span></div>
       ${waterBarHtml(r.id, day)}
-      <div style="display:flex; flex-direction:column; gap:6px;">${waterButtonsHtml(r.id)}</div>
+      <div style="display:flex; flex-direction:column; gap:6px;">${waterButtonsHtml(r.id, day)}</div>
     </div>`).join("") : `<div class="cp-hint">No residents in this house.</div>`;
   return `<div class="card dash-mod open">${head}<div class="dash-mod-body">
     ${step3TablesNote()}
@@ -14872,7 +14877,7 @@ function waterSectionHtml(r, viewDate, isToday){
       <div class="dc-meal-head"><span class="dc-label" style="margin-bottom:0;">Total ${isToday?"today":"that day"}: ${cupsNum(total)} of ${cupsNum(goal)} cups (${Math.round(total)} oz)</span></div>
       <div style="max-width:420px; margin-top:6px;"><div class="water-bar ${total>=goal?"done":""}"><i style="width:${Math.min(100,Math.round((total/goal)*100))}%"></i></div></div>
     </div>
-    ${isToday ? `<div class="dc-field" style="margin-top:10px;"><span class="dc-label">Log water</span>${waterButtonsHtml(r.id)}</div>` : ""}
+    ${isToday ? `<div class="dc-field" style="margin-top:10px;"><span class="dc-label">Log water</span>${waterButtonsHtml(r.id, viewDate)}</div>` : ""}
     <div class="dc-field" style="margin-top:10px;">${rows}</div>
     ${canSetWaterGoal() && isToday ? `<div class="dc-field" style="margin-top:10px;"><span class="dc-label">Daily goal (House Manager / Leadership)</span>
       <div class="dc-inline-input" style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;"><input type="number" id="water-goal-${r.id}" min="1" max="50" step="0.5" inputmode="decimal" value="${cupsNum(goal)}" style="max-width:110px;"> <span class="cp-hint" style="margin:0;">cups (1 cup = 8 oz)</span><button type="button" class="btn small" onclick="saveWaterGoal(${jsId(r.id)})">Save goal</button></div>${goalErr}</div>`
@@ -14985,7 +14990,8 @@ function openCareLogAt(residentId, sectionKey){
 function renderDailyCareDetail(){
   const r = residents.find(x=>x.id===state.dcResidentId);
   const viewDate = state.dcViewDate || careDayIso();
-  const isToday = viewDate === careDayIso();
+  const isCurrent = viewDate === careDayIso();
+  const isToday = careLogEditable(viewDate); // "editable": the current log, or the previous one for 24 more hours
   const dc = getDC(r.id, viewDate);
   const id = currentUser();
 
@@ -15011,15 +15017,15 @@ function renderDailyCareDetail(){
 
     <div class="cal-week-nav" style="margin-bottom:14px;">
       <button class="btn small" onclick="shiftDailyCareDate(-1)">‹ Prev Day</button>
-      <span class="hint" style="margin:0;">${isToday ? `Current log — ${fmtIsoLabel(viewDate)}, open until 7:00 AM tomorrow` : fmtIsoLabel(viewDate)}</span>
-      <button class="btn small" onclick="shiftDailyCareDate(1)" ${isToday ? "disabled" : ""}>Next Day ›</button>
-      ${!isToday ? `<button class="btn small" onclick="state.dcViewDate=null; scheduleRender();">Back to Today</button>` : ""}
+      <span class="hint" style="margin:0;">${isCurrent ? `Current log — ${fmtIsoLabel(viewDate)}, started 7:00 AM` : (isToday ? `Previous log — ${fmtIsoLabel(viewDate)}, still open until 7:00 AM tomorrow` : fmtIsoLabel(viewDate))}</span>
+      <button class="btn small" onclick="shiftDailyCareDate(1)" ${isCurrent ? "disabled" : ""}>Next Day ›</button>
+      ${!isCurrent ? `<button class="btn small" onclick="state.dcViewDate=null; scheduleRender();">Back to Current Log</button>` : ""}
     </div>
     ${isToday ? `<div class="dc-savebar">
       <span class="dc-savebar-text">Every save records who updated this log and when — see Update history at the bottom.</span>
       <span class="dc-savebar-right">${(state.dcSavedAt||{})[r.id] && Date.now()-state.dcSavedAt[r.id] < 2500 ? `<span class="dc-savebar-flash">✓ Saved</span>` : ""}<button class="btn primary small" onclick="saveDailyCare('${r.id}')">Save Update</button></span>
     </div>` : ""}
-    ${!isToday ? `<div class="cp-hint" style="margin:0 0 14px; padding:10px 14px; background:var(--surface-alt); border-radius:8px;">Viewing a past log — read-only. Documentation can only be added or changed on the current log (each log runs 7 AM to 7 AM).</div>` : ""}
+    ${!isToday ? `<div class="cp-hint" style="margin:0 0 14px; padding:10px 14px; background:var(--surface-alt); border-radius:8px;">Viewing an older log — read-only. Each log runs 7 AM to 7 AM and stays open for 24 hours after it ends.</div>` : ""}
 
     <div class="${isToday ? '' : 'dc-readonly'}">
     <div class="card dc-section" id="dc-sec-meals">
@@ -15135,7 +15141,7 @@ function renderDailyCareDetail(){
     </div>
 
     <div class="card dc-section">
-      <div class="dc-section-title" style="margin-bottom:6px;">Update history${isToday ? "" : " (this day)"}</div>
+      <div class="dc-section-title" style="margin-bottom:6px;">Update history${isCurrent ? "" : " (this log)"}</div>
       ${dc.log.length ? dc.log.map(l=>`<div class="dc-log">${l.at} — <b>${l.by}</b> (${l.role})${l.note ? " — "+l.note : ""}</div>`).join("") : "<div class='dc-log' style='font-style:italic;'>No updates logged yet.</div>"}
     </div>
   `;
