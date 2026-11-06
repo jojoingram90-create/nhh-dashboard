@@ -702,6 +702,26 @@
   .ph-short .ic{ font-size:18px; width:22px; text-align:center; flex:none; }
   .ph-short .bd{ margin-left:auto; background:var(--accent); color:var(--surface); border-radius:99px; padding:1px 8px; font-size:12px; }
   .ph-fullbtn{ width:100%; margin-top:14px; }
+  .ph-wrap{ max-width:1100px; margin:0 auto; }
+  .ph-cal-house{ display:block; font-size:12.5px; font-weight:600; color:var(--text-muted); margin-top:1px; }
+  .ph-daynav{ display:flex; align-items:center; justify-content:space-between; gap:10px; margin-bottom:12px; }
+  .ph-daylabel{ font-weight:700; font-size:15px; display:flex; align-items:center; gap:8px; }
+  .ph-photos{ display:grid; grid-template-columns:repeat(3,1fr); gap:10px; }
+  .ph-photo-slot{ display:flex; flex-direction:column; align-items:flex-start; gap:4px; min-width:0; }
+  .ph-photo-slot .nm{ font-weight:700; font-size:13.5px; }
+  .ph-photo-slot .by{ font-size:12px; color:var(--text-faint); overflow-wrap:anywhere; }
+  .ph-photo{ display:block; width:100%; aspect-ratio:1/1; border:1px solid var(--border); border-radius:12px; background:var(--surface-2, var(--bg)); padding:0; overflow:hidden; cursor:pointer; }
+  .ph-photo img{ width:100%; height:100%; object-fit:cover; display:block; }
+  .ph-photo.empty{ display:flex; align-items:center; justify-content:center; font-size:30px; cursor:default; opacity:.55; }
+  .ph-appr .ap-pend{ margin-bottom:10px !important; }
+  @media (min-width:701px){
+    .ph-tiles{ grid-template-columns:repeat(auto-fill, minmax(190px,1fr)); }
+    .ph-shortcuts{ grid-template-columns:repeat(auto-fill, minmax(200px,1fr)); }
+    .ph-fullbtn{ width:auto; min-width:260px; }
+    .ph-photos{ max-width:620px; }
+    .ph-hello h2{ font-size:26px; }
+    .ph-search{ max-width:480px; }
+  }
   #phoneTabbar{ display:none; }
   @media (max-width:700px){
     body{ -webkit-text-size-adjust:100%; }
@@ -4797,7 +4817,7 @@ async function loadCompanyHouses(){
 // Oct 14, 2026 — version stamp, changed with every delivered file. The page re-reads index.html in the background and,
 // if a newer stamp has been published, shows a "reload" bar (see checkForNewVersion). A phone, computer or iPad that
 // has had the dashboard open for days otherwise keeps running its old copy, and an old copy can lose newer data.
-const APP_BUILD = "2026-11-06c";
+const APP_BUILD = "2026-11-06d";
 const SUPABASE_URL = "https://wxvbbclbgicemegcvvae.supabase.co";
 const SUPABASE_ANON_KEY = "sb_publishable_JC2rWmQ8WOi6-Dhnd_UAXQ_9291ibar";
 const PIN_LOGIN_URL = SUPABASE_URL + "/functions/v1/pin-login";
@@ -6035,9 +6055,9 @@ async function loadFoodPhotosFromSupabase(){
 // While the Food Photo screen is open, pull in other houses' new photos about once a minute. Never while
 // the camera / photo picker is open (a re-draw would throw away the picture being chosen).
 function foodPhotosMaybeRefresh(){
-  if(state.view !== "foodphotos" || !supabaseSession || foodPhotoLoading) return;
+  if(!(state.view === "foodphotos" || phoneHomeActive()) || !supabaseSession || foodPhotoLoading) return;
   if(!foodPhotoRefreshTimer && typeof setInterval === "function"){
-    foodPhotoRefreshTimer = setInterval(()=>{ if(state.userId && state.view === "foodphotos") foodPhotosMaybeRefresh(true); }, FOOD_PHOTO_REFRESH_MS);
+    foodPhotoRefreshTimer = setInterval(()=>{ if(state.userId && (state.view === "foodphotos" || phoneHomeActive())) foodPhotosMaybeRefresh(true); }, FOOD_PHOTO_REFRESH_MS);
   }
   if(!arguments[0] && foodPhotoRefreshAt && Date.now() - foodPhotoRefreshAt < FOOD_PHOTO_REFRESH_MS - 5000) return;
   if(photoPickActive()) return;
@@ -6998,7 +7018,7 @@ function lockApp(auto){
   visitorRequests = []; visitorRequestsFetchedAt = 0; visitorRequestsHouse = null; // kiosk visitor names are not kept in memory while locked
   pinBuffer = "";
   pinError = false;
-  state.photoDate = todayIso();
+  state.photoDate = todayIso(); state.homePhotoOffset = 0;
   render();
 }
 function resetIdleTimer(){
@@ -7472,14 +7492,15 @@ function approvalsQueueParts(){
   const pendingRAR = pendingResidentArchivesForHouse();
   const pendingSup = pendingSuppliesForHouse();
   const pendingCal = pendingCalendarEventsForHouse();
-  const nothing = !(pendingDx.length || pendingMeds.length || pendingNotes.length || pendingPlans.length || pendingMenu.length || pendingSections.length || pendingVis.length || pendingVR.length || pendingMPR.length || pendingRAR.length || pendingSup.length || pendingCal.length);
+  const count = pendingDx.length + pendingMeds.length + pendingNotes.length + pendingPlans.length + pendingMenu.length + pendingSections.length + pendingVis.length + pendingVR.length + pendingMPR.length + pendingRAR.length + pendingSup.length + pendingCal.length;
+  const nothing = count === 0;
   const readOnlyHint = !(canActMenu || canActResidents || canActSupplies || canActCalendar || canActMasterMenu)
     ? `<span class="hint">You can see what's waiting on a house manager or leadership review here, but approving or denying isn't your call.</span>`
     : `<span class="hint">Special instructions, new medication names, new diagnoses, and the new Batch 9 caregiver-proposed items below that still need a house manager or leadership review.</span>`;
   const cardsHtml = nothing ? "" : `
     <div style="display:flex; flex-direction:column; gap:10px;">
-      ${pendingDx.map(d=>approvalCard("New diagnosis option", d.name, d.addedBy, canActResidents, `approveDiagnosis(${d.id})`, `denyDiagnosis(${d.id})`)).join("")}
-      ${pendingMeds.map(m=>approvalCard("New medication name", m.name, m.addedBy, canActResidents, `approveCommonMedication(${m.id})`, `denyCommonMedication(${m.id})`)).join("")}
+      ${pendingDx.map(d=>approvalCard("New diagnosis option", d.name, d.addedBy, canActResidents, `approveDiagnosis(${jsId(d.id)})`, `denyDiagnosis(${jsId(d.id)})`)).join("")}
+      ${pendingMeds.map(m=>approvalCard("New medication name", m.name, m.addedBy, canActResidents, `approveCommonMedication(${jsId(m.id)})`, `denyCommonMedication(${jsId(m.id)})`)).join("")}
       ${pendingNotes.map(n=>{
         const r = residents.find(x=>x.id===n.residentId);
         const pendingDelete = state.mealNoteDeletePending && state.mealNoteDeletePending.residentId===n.residentId && state.mealNoteDeletePending.noteId===n.id;
@@ -7493,11 +7514,11 @@ function approvalsQueueParts(){
             </div>
           </div>`;
         }
-        return approvalCard(`Food Menu instruction — ${r ? r.name : n.residentId}`, n.text, n.addedBy, canActMenu, `approveMealNote('${n.residentId}',${n.id})`, `requestDeleteMealNote('${n.residentId}',${n.id})`);
+        return approvalCard(`Food Menu instruction — ${r ? r.name : n.residentId}`, n.text, n.addedBy, canActMenu, `approveMealNote('${n.residentId}',${jsId(n.id)})`, `requestDeleteMealNote('${n.residentId}',${jsId(n.id)})`);
       }).join("")}
       ${pendingPlans.map(p=>{
         const r = residents.find(x=>x.id===p.residentId);
-        return approvalCard(`Breakfast plan — ${r ? r.name : p.residentId}`, `${p.label}: ${breakfastPlanItemsText(p)}`, p.addedBy, canActMenu, `approveBreakfastPlan('${p.residentId}',${p.id})`, `denyBreakfastPlan('${p.residentId}',${p.id})`);
+        return approvalCard(`Breakfast plan — ${r ? r.name : p.residentId}`, `${p.label}: ${breakfastPlanItemsText(p)}`, p.addedBy, canActMenu, `approveBreakfastPlan('${p.residentId}',${jsId(p.id)})`, `denyBreakfastPlan('${p.residentId}',${jsId(p.id)})`);
       }).join("")}
       ${pendingMenu.map(({week,meal,day,cell})=>
         approvalCard(`Master menu — ${meal} · ${day} (Week ${week})`, cell.item || "(blank)", cell.proposedBy, canActMasterMenu, `approveMenuCell('${week}','${meal}','${day}')`, `denyMenuCell('${week}','${meal}','${day}')`)
@@ -7515,11 +7536,11 @@ function approvalsQueueParts(){
       ${pendingRAR.map(q=>residentArchiveApprovalCard(q, isSystemAdmin())).join("")}
       ${pendingSup.map(s=>{
         const r = residents.find(x=>x.id===s.residentId);
-        return approvalCard(`Supplies Received — ${r ? r.name : s.residentId}`, `${s.item}${s.quantity?" — Qty: "+s.quantity:""}`, s.addedBy, canActSupplies, `approveSupply(${s.id})`, `denySupply(${s.id})`);
+        return approvalCard(`Supplies Received — ${r ? r.name : s.residentId}`, `${s.item}${s.quantity?" — Qty: "+s.quantity:""}`, s.addedBy, canActSupplies, `approveSupply(${jsId(s.id)})`, `denySupply(${jsId(s.id)})`);
       }).join("")}
-      ${pendingCal.map(e=>approvalCard(`Calendar event — ${esc(e.t)}`, `${fmtIsoLabel(e.day)}${e.time?" · "+fmtEventTime(e.time):""}`, e.createdBy, canActCalendar, `approveCalendarEvent('${e.day}',${e.id})`, `denyCalendarEvent('${e.day}',${e.id})`)).join("")}
+      ${pendingCal.map(e=>approvalCard(`Calendar event — ${esc(e.t)}`, `${fmtIsoLabel(e.day)}${e.time?" · "+fmtEventTime(e.time):""}`, e.createdBy, canActCalendar, `approveCalendarEvent('${e.day}',${jsId(e.id)})`, `denyCalendarEvent('${e.day}',${jsId(e.id)})`)).join("")}
     </div>`;
-  return { nothing, readOnlyHint, cardsHtml };
+  return { nothing, count, readOnlyHint, cardsHtml };
 }
 function renderApprovalsQueueForHouse(){
   const q = approvalsQueueParts();
@@ -7647,6 +7668,15 @@ function toggleApprovalHistOpen(open){
   if(!state.apHist) state.apHist = { q:"", status:"decided", range:"7d", open:false };
   state.apHist.open = !!open;
 }
+// The "Waiting for your decision" list as a collapsible section that is OPEN by default (phone home and the Approvals page).
+function toggleApprovalPendOpen(open){ state.apPendOpen = !!open; }
+function approvalsPendingDetailsHtml(queue, houseName){
+  if(state.apPendOpen === undefined) state.apPendOpen = true;
+  return `<details class="card ap-pend" style="padding:14px 18px; margin-bottom:16px;" ${state.apPendOpen ? "open" : ""} ontoggle="toggleApprovalPendOpen(this.open)">
+      <summary style="cursor:pointer; font-weight:700;">Waiting for your decision — ${esc(houseName)} (${queue.count})</summary>
+      <div style="margin-top:12px;">${queue.cardsHtml}</div>
+    </details>`;
+}
 function renderApprovalsHistoryForLeadership(){
   if(!state.apHist) state.apHist = { q:"", status:"decided", range:"7d", open:false };
   const f = state.apHist;
@@ -7704,11 +7734,9 @@ function renderApprovalsHistoryForLeadership(){
   }).join("") : `<div class="card" style="padding:14px 18px;"><div class="cp-hint" style="font-style:italic;">${q || f.status!=="decided" || f.range!=="7d" ? "Nothing matches those filters." : "Nothing was approved or denied in the last "+APPROVAL_RECENT_DAYS+" days. Use the filters above to look further back."}</div></div>`;
   const queue = approvalsQueueParts();
   const houseName = (houses.find(h=>h.id===state.house)||{}).name||"this house";
+  if(state.apPendOpen === undefined) state.apPendOpen = true;
   const queueBlock = queue.nothing ? `<div class="card" style="padding:14px 18px; margin-bottom:16px;"><div class="cp-hint" style="font-style:italic;">Nothing is waiting for your decision at ${esc(houseName)} right now.</div></div>`
-    : `<div style="display:flex; flex-direction:column; gap:10px; margin-bottom:16px;">
-      <div class="dc-label">Waiting for your decision — ${esc(houseName)}</div>
-      ${queue.cardsHtml}
-    </div>`;
+    : approvalsPendingDetailsHtml(queue, houseName);
   const sel = (id, cur, opts) => `<select id="${id}" onchange="setApprovalHistFilter('${id==='ap-status'?'status':'range'}', this.value)">${opts.map(([v,l])=>`<option value="${v}" ${cur===v?"selected":""}>${l}</option>`).join("")}</select>`;
   const filtersActive = !!q || f.status!=="decided" || f.range!=="7d";
   document.getElementById("content").innerHTML = `
@@ -9616,6 +9644,7 @@ function setHouse(h){
   render();
 }
 function goView(v){
+  if(v==="dashboard") state.phoneFullDashboard = false; // Dashboard in the menu = Leadership home (everyone else has no 'home' view)
   if(v!=="dailycaredetail") state.dcViewDate = null; // never leave a browsed past log behind for other screens to write into
   if(v!=="manageresidents") state.archDraft = null;
   state.archRestorePending = null;
@@ -10178,9 +10207,11 @@ function renderDueNowBanner(){
 const PHONE_MQ = "(max-width: 700px)";
 function isPhoneWidth(){ try{ return !!(window.matchMedia && window.matchMedia(PHONE_MQ).matches); }catch(e){ return false; } }
 function phoneLeadershipUi(){ return !!state.userId && isSystemAdmin() && isPhoneWidth(); }
-function phoneHomeActive(){ return phoneLeadershipUi() && state.view === "dashboard" && !state.phoneFullDashboard; }
+// Leadership lands on the broad-overview home at every screen width (phone, iPad, computer). The bottom tab bar stays phone-only.
+function leadershipHomeUi(){ return !!state.userId && isSystemAdmin(); }
+function phoneHomeActive(){ return leadershipHomeUi() && state.view === "dashboard" && !state.phoneFullDashboard; }
 try{ if(window.matchMedia){ const mq = window.matchMedia(PHONE_MQ); const onChange = ()=>{ if(state.userId) scheduleRender(); }; if(mq.addEventListener) mq.addEventListener("change", onChange); else if(mq.addListener) mq.addListener(onChange); } }catch(e){}
-function goPhoneHome(){ state.phoneFullDashboard = false; state.phoneResQ = ""; state.dashboardStatFilter = null; closeSidebar(); goView("dashboard"); }
+function goPhoneHome(){ state.phoneFullDashboard = false; state.phoneResQ = ""; state.dashboardStatFilter = null; state.homePhotoOffset = 0; closeSidebar(); goView("dashboard"); }
 function openFullHouseDashboard(filter){
   state.phoneFullDashboard = true;
   if(filter) state.dashboardStatFilter = filter;
@@ -10215,6 +10246,66 @@ function setPhoneResidentSearch(v){
 function phoneTile(cls, n, label, sub, onclick){
   return `<button type="button" class="ph-tile ${cls}" onclick="${onclick}"><span class="n">${n}</span><span class="l">${label}</span>${sub ? `<span class="s">${sub}</span>` : ""}</button>`;
 }
+// ---- Leadership home: today's calendar across ALL houses, and a Food Photos section ----
+function leadTodayEventsHtml(){
+  const day = todayIso();
+  const todays = (calendarEvents[day] || []).filter(e=>!e.deleted && e.status!=="denied")
+    .filter(e=>{ if(e.birthdayOf){ const r = residents.find(x=>x.id===e.birthdayOf); if(r && r.archived) return false; } return true; })
+    .slice().sort((a,b)=>(a.time||"99:99").localeCompare(b.time||"99:99"));
+  if(!todays.length) return "";
+  return `<div class="ph-block ph-cal" style="margin-top:0;">
+    <h3>On the calendar today — all houses</h3>
+    <div class="card cal-today-card">
+      ${todays.map(e=>{
+        const hn = e.house ? ((houses.find(h=>h.id===e.house)||{}).name || "") : "All houses";
+        return `<button type="button" class="cal-today-row" onclick="leadOpenEvent('${day}',${jsId(e.id)}, ${e.house ? jsId(e.house) : "null"})">
+          <div class="cal-today-time">${e.time ? fmtEventTime(e.time) : "All day"}</div>
+          <span class="cal-today-bar ${e.k}"></span>
+          <div class="cal-today-title">${esc(e.t)}<span class="ph-cal-house">${esc(hn)}</span></div>
+        </button>`; }).join("")}
+    </div>
+  </div>`;
+}
+function leadOpenEvent(day, id, houseId){
+  if(houseId && houseId !== state.house) state.house = houseId;
+  goView('calendar'); openEventDetail(day, id);
+}
+function homePhotoDate(){ return addDaysIso(todayIso(), -(state.homePhotoOffset || 0)); }
+function shiftHomePhotoDay(delta){
+  const next = Math.max(0, Math.min(HOME_PHOTO_DAYS_BACK, (state.homePhotoOffset || 0) - delta));
+  state.homePhotoOffset = next; scheduleRender();
+}
+const HOME_PHOTO_DAYS_BACK = 30;
+function leadFoodPhotosHtml(){
+  const date = homePhotoDate();
+  const h = houses.find(x=>x.id===state.house);
+  const dayData = ((foodPhotos[date]||{})[state.house]) || {};
+  const isToday = (state.homePhotoOffset || 0) === 0;
+  const missingStatus = photoDeadlinePassed(date) ? "Missing" : "Not posted yet";
+  const slots = MEAL_CATS.map(c=>{
+    const entry = dayData[c], meta = CAT_META[c];
+    const media = (entry && entry.img)
+      ? `<button type="button" class="ph-photo" onclick="openLightbox(this.querySelector('img').src)" aria-label="Enlarge ${meta.label} photo"><img src="${entry.img}" alt="${meta.label} photo"></button>`
+      : `<div class="ph-photo empty">${meta.icon}</div>`;
+    const status = entry
+      ? (entry.failed ? badge("alert","Upload failed") : entry.pending ? badge("neutral","Uploading…") : badge("good","Posted"))
+      : badge(missingStatus==="Missing" ? "alert" : "neutral", missingStatus);
+    return `<div class="ph-photo-slot">${media}<div class="nm">${meta.label}</div>${status}${entry && !entry.failed ? `<div class="by">${esc(entry.by)} · ${esc(entry.at)}</div>` : ""}</div>`;
+  }).join("");
+  const label = isToday ? "Today" : fmtIsoLabel(date);
+  return `<div class="ph-block ph-food">
+    <h3>Food photos — ${esc(h ? h.name : "")}</h3>
+    <div class="card" style="padding:14px;">
+      <div class="ph-daynav">
+        <button type="button" class="btn small" onclick="shiftHomePhotoDay(-1)" ${(state.homePhotoOffset||0) >= HOME_PHOTO_DAYS_BACK ? "disabled" : ""} aria-label="Previous day">←</button>
+        <div class="ph-daylabel">${esc(label)}${isToday ? "" : ` <button type="button" class="btn small" onclick="state.homePhotoOffset=0; scheduleRender();">Today</button>`}</div>
+        <button type="button" class="btn small" onclick="shiftHomePhotoDay(1)" ${isToday ? "disabled" : ""} aria-label="Next day">→</button>
+      </div>
+      <div class="ph-photos">${slots}</div>
+      <button type="button" class="btn small ph-fullbtn" onclick="state.photoDate='${date}'; goView('foodphotos')">Open Food Photos for all houses</button>
+    </div>
+  </div>`;
+}
 function renderLeadershipPhoneHome(){
   const me = currentUser();
   const house = houses.find(h=>h.id === state.house);
@@ -10236,10 +10327,14 @@ function renderLeadershipPhoneHome(){
     ["passedmeds","✚","Passed Medications",0], ["archivedresidents","🗄","Archive",0]
   ];
   document.getElementById("content").innerHTML = `
-  <div class="ph-hello"><h2>${phoneGreeting()}, ${escFlagText((me.name || "").split(" ")[0])}</h2><div class="sub">${escFlagText(house ? house.name : "")} · ${TODAY}</div></div>
+  <div class="ph-wrap"><div class="ph-hello"><h2>${phoneGreeting()}, ${escFlagText((me.name || "").split(" ")[0])}</h2><div class="sub">${escFlagText(house ? house.name : "")} · ${TODAY}</div></div>
   <div class="ph-chips" role="tablist" aria-label="House">${houses.map(h=>`<button type="button" class="ph-chip ${h.id===state.house?"active":""}" onclick="setHouse(${jsId(h.id)})">${escFlagText(h.name)}</button>`).join("")}</div>
 
+  ${leadTodayEventsHtml()}
   ${renderIncidentAckCard()}
+  ${parts.nothing ? "" : `<div class="ph-block ph-appr" style="margin-top:12px;">${approvalsPendingDetailsHtml(parts, house ? house.name : "this house")}
+    ${pending > parts.count ? `<div class="cp-hint" style="margin:-6px 0 8px;">${pending - parts.count} more waiting at other houses. Tap a house above to see them.</div>` : ""}
+    <button type="button" class="btn small ph-fullbtn" style="margin-top:0;" onclick="goView('approvals')">Open Pending Approvals and history</button></div>`}
   <div class="ph-block" style="margin-top:12px;">
     <h3>Needs you now</h3>
     <div class="ph-tiles">
@@ -10253,8 +10348,7 @@ function renderLeadershipPhoneHome(){
     </div>
   </div>
 
-  ${parts.nothing ? "" : `<div class="ph-block"><h3>Waiting for you</h3>${parts.cardsHtml}
-    <button type="button" class="btn small ph-fullbtn" onclick="goView('approvals')">Open Pending Approvals and history</button></div>`}
+  ${leadFoodPhotosHtml()}
 
   <div class="ph-block">
     <h3>Find a resident</h3>
@@ -10266,7 +10360,7 @@ function renderLeadershipPhoneHome(){
     <h3>Go to</h3>
     <div class="ph-shortcuts">${shortcuts.map(([id,ic,label,bd])=>`<button type="button" class="ph-short" onclick="goView('${id}')"><span class="ic">${ic}</span>${label}${bd ? `<span class="bd">${bd}</span>` : ""}</button>`).join("")}</div>
     <button type="button" class="btn ph-fullbtn" onclick="openFullHouseDashboard()">Open the full house dashboard</button>
-  </div>`;
+  </div></div>`;
 }
 // The bottom bar (Leadership on a phone only)
 function renderPhoneTabbar(){
@@ -10295,7 +10389,7 @@ function renderDashboard(){
   const monitoredCount = list.filter(r=>activeMonitors(r.id).length).length;
 
   let html = `
-  ${(phoneLeadershipUi() && state.phoneFullDashboard) ? `<button type="button" class="btn small" style="margin-bottom:12px;" onclick="goPhoneHome()">← Phone home</button>` : ""}
+  ${(leadershipHomeUi() && state.phoneFullDashboard) ? `<button type="button" class="btn small" style="margin-bottom:12px;" onclick="goPhoneHome()">← Leadership home</button>` : ""}
   <div class="section">
     <div class="section-head"><h2>Resident Quick View</h2><button type="button" class="hint dash-count-link" onclick="goView('residents')">${list.length} resident${list.length===1?"":"s"} — see full profiles ›</button></div>
     <div class="stat-strip">
@@ -15206,6 +15300,7 @@ function printProfile(id){
 
 function render(){
   refreshTodayIfNeeded();
+  if(state.view !== "dashboard") state.homePhotoOffset = 0;
   if(state.view !== "foodphotos") state.photoDate = todayIso(); // Food Photos always opens on today, however far back someone browsed
   schedulePersist();
   if(!state.userId){
