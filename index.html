@@ -722,6 +722,26 @@
     .ph-hello h2{ font-size:26px; }
     .ph-search{ max-width:480px; }
   }
+  .ph-hgrid{ display:grid; grid-template-columns:1fr; gap:10px; }
+  .ph-hcard{ padding:14px; }
+  .ph-hcard-head{ display:flex; align-items:center; justify-content:space-between; gap:8px; flex-wrap:wrap; margin-bottom:10px; }
+  .ph-hcard-head b{ font-size:16px; }
+  .ph-hcard-sub{ font-size:12.5px; color:var(--text-muted); font-weight:600; }
+  .ph-hcard-note{ margin-top:8px; font-size:12.5px; color:var(--text-muted); }
+  .ph-ministats{ display:grid; grid-template-columns:repeat(3,1fr); gap:8px; }
+  .ph-mini{ text-align:left; padding:8px 10px; border:1px solid var(--border); background:var(--surface); border-radius:10px; font:inherit; color:var(--text); display:flex; flex-direction:column; gap:0; min-height:56px; cursor:pointer; }
+  .ph-mini .n{ font-size:22px; font-weight:800; line-height:1.15; font-variant-numeric:tabular-nums; }
+  .ph-mini .l{ font-size:12px; font-weight:700; color:var(--text-muted); }
+  .ph-mini.attn{ background:var(--alert-bg); border-color:var(--alert-dot); }
+  .ph-mini.attn .n, .ph-mini.attn .l{ color:var(--alert-text); }
+  .ph-mini.calm .n{ color:var(--good-text); }
+  .ph-mini.info .n{ color:var(--away-text); }
+  .ph-fcard{ text-align:left; padding:14px; font:inherit; color:var(--text); cursor:pointer; width:100%; display:block; }
+  .ph-thumbs{ display:grid; grid-template-columns:repeat(3,1fr); gap:8px; }
+  .ph-thumb{ display:block; aspect-ratio:1/1; border-radius:10px; overflow:hidden; border:1px solid var(--border); }
+  .ph-thumb img{ width:100%; height:100%; object-fit:cover; display:block; }
+  .ph-thumb.empty{ display:flex; align-items:center; justify-content:center; font-size:22px; opacity:.5; background:var(--bg); }
+  @media (min-width:701px){ .ph-hgrid{ grid-template-columns:repeat(auto-fill, minmax(330px,1fr)); } }
   #phoneTabbar{ display:none; }
   @media (max-width:700px){
     body{ -webkit-text-size-adjust:100%; }
@@ -4817,7 +4837,7 @@ async function loadCompanyHouses(){
 // Oct 14, 2026 — version stamp, changed with every delivered file. The page re-reads index.html in the background and,
 // if a newer stamp has been published, shows a "reload" bar (see checkForNewVersion). A phone, computer or iPad that
 // has had the dashboard open for days otherwise keeps running its old copy, and an old copy can lose newer data.
-const APP_BUILD = "2026-11-06d";
+const APP_BUILD = "2026-11-06e";
 const SUPABASE_URL = "https://wxvbbclbgicemegcvvae.supabase.co";
 const SUPABASE_ANON_KEY = "sb_publishable_JC2rWmQ8WOi6-Dhnd_UAXQ_9291ibar";
 const PIN_LOGIN_URL = SUPABASE_URL + "/functions/v1/pin-login";
@@ -7018,7 +7038,7 @@ function lockApp(auto){
   visitorRequests = []; visitorRequestsFetchedAt = 0; visitorRequestsHouse = null; // kiosk visitor names are not kept in memory while locked
   pinBuffer = "";
   pinError = false;
-  state.photoDate = todayIso(); state.homePhotoOffset = 0;
+  state.photoDate = todayIso(); state.homePhotoOffset = 0; state.leadAll = true;
   render();
 }
 function resetIdleTimer(){
@@ -7322,7 +7342,7 @@ const state = { house:"boca-bay", userId:null, view:"dashboard", residentId:null
   staffSort:"name-asc",
   houseAddOpen:false, houseAddError:null, houseDraft:null, houseEditingId:null, houseEditError:null, houseRemovePending:null, houseRemoveBlocked:null,
   calendarWeekStart:null, dcViewDate:null,
-  residentAddOpen:false, residentAddError:null, residentDraft:null, residentEditingId:null, residentEditError:null, phoneFullDashboard:false, phoneResQ:"", archDraft:null, archRestorePending:null, archNotice:"", archError:"", archQ:"",
+  residentAddOpen:false, residentAddError:null, residentDraft:null, residentEditingId:null, residentEditError:null, phoneFullDashboard:false, leadAll:true, phoneResQ:"", archDraft:null, archRestorePending:null, archNotice:"", archError:"", archQ:"",
   houseContactAddOpen:false, houseContactAddError:null, houseContactDraft:null, houseContactEditingId:null, houseContactEditError:null, houseContactRemovePending:null,
   suppliesAddOpen:false, suppliesAddError:null, suppliesDraft:null, suppliesEditingId:null, suppliesEditError:null, suppliesRemovePending:null,
   suppliesFilterResidentId:"", suppliesFilterDate:"",
@@ -7471,7 +7491,8 @@ function visitorRequestApprovalCard(q, canAct){
   return approvalCard(`Visitor request from the check-in kiosk — ${r ? r.name : q.residentId}`, visitorRequestDetail(q), "the check-in kiosk" + (q.requester && q.requester!==q.name ? " (filled in by "+q.requester+")" : ""), canAct, `approveVisitorRequest(${jsId(q.id)})`, `denyVisitorRequest(${jsId(q.id)})`)
     + (q.saveError ? `<div class="hint" style="margin:-6px 0 0; color:var(--alert-text);">${esc(q.saveError)}</div>` : "");
 }
-function approvalsQueueParts(){
+// scope: omitted = this house plus company-wide items; "house" = this house only; "company" = only the items that belong to no house
+function approvalsQueueParts(scope){
   const canActMenu = moduleEdit('menu');
   const canActResidents = moduleEdit('residents');
   const canActSupplies = moduleEdit('supplies');
@@ -7480,18 +7501,18 @@ function approvalsQueueParts(){
   // one house's manager approving another's edit didn't seem right) — narrower than canActMenu, which
   // still governs the resident-scoped meal notes/breakfast plans below unchanged.
   const canActMasterMenu = isSystemAdmin();
-  const pendingDx = pendingDiagnosesList();
-  const pendingMeds = pendingCommonMedications();
-  const pendingNotes = housePendingMealNotes();
-  const pendingPlans = pendingBreakfastPlansForHouse();
-  const pendingMenu = pendingMenuCells();
-  const pendingSections = pendingResidentSectionsForHouse();
-  const pendingVis = pendingVisitorsForHouse();
-  const pendingVR = pendingVisitorRequestsForHouse();
-  const pendingMPR = pendingMedPassRemovalsForHouse();
-  const pendingRAR = pendingResidentArchivesForHouse();
-  const pendingSup = pendingSuppliesForHouse();
-  const pendingCal = pendingCalendarEventsForHouse();
+  const pendingDx = scope==='house' ? [] : pendingDiagnosesList();
+  const pendingMeds = scope==='house' ? [] : pendingCommonMedications();
+  const pendingNotes = scope==='company' ? [] : housePendingMealNotes();
+  const pendingPlans = scope==='company' ? [] : pendingBreakfastPlansForHouse();
+  const pendingMenu = scope==='house' ? [] : pendingMenuCells();
+  const pendingSections = scope==='company' ? [] : pendingResidentSectionsForHouse();
+  const pendingVis = scope==='company' ? [] : pendingVisitorsForHouse();
+  const pendingVR = scope==='company' ? [] : pendingVisitorRequestsForHouse();
+  const pendingMPR = scope==='company' ? [] : pendingMedPassRemovalsForHouse();
+  const pendingRAR = scope==='company' ? [] : pendingResidentArchivesForHouse();
+  const pendingSup = scope==='company' ? [] : pendingSuppliesForHouse();
+  const pendingCal = scope==='company' ? [] : pendingCalendarEventsForHouse();
   const count = pendingDx.length + pendingMeds.length + pendingNotes.length + pendingPlans.length + pendingMenu.length + pendingSections.length + pendingVis.length + pendingVR.length + pendingMPR.length + pendingRAR.length + pendingSup.length + pendingCal.length;
   const nothing = count === 0;
   const readOnlyHint = !(canActMenu || canActResidents || canActSupplies || canActCalendar || canActMasterMenu)
@@ -7732,10 +7753,11 @@ function renderApprovalsHistoryForLeadership(){
         </div>`).join("")}
     </div>`;
   }).join("") : `<div class="card" style="padding:14px 18px;"><div class="cp-hint" style="font-style:italic;">${q || f.status!=="decided" || f.range!=="7d" ? "Nothing matches those filters." : "Nothing was approved or denied in the last "+APPROVAL_RECENT_DAYS+" days. Use the filters above to look further back."}</div></div>`;
-  const queue = approvalsQueueParts();
-  const houseName = (houses.find(h=>h.id===state.house)||{}).name||"this house";
+  const allMode = !!state.leadAll;
+  const queue = allMode ? leadAllApprovalsParts() : approvalsQueueParts();
+  const houseName = allMode ? "all houses" : ((houses.find(h=>h.id===state.house)||{}).name||"this house");
   if(state.apPendOpen === undefined) state.apPendOpen = true;
-  const queueBlock = queue.nothing ? `<div class="card" style="padding:14px 18px; margin-bottom:16px;"><div class="cp-hint" style="font-style:italic;">Nothing is waiting for your decision at ${esc(houseName)} right now.</div></div>`
+  const queueBlock = queue.nothing ? `<div class="card" style="padding:14px 18px; margin-bottom:16px;"><div class="cp-hint" style="font-style:italic;">Nothing is waiting for your decision ${allMode ? "at any house" : "at "+esc(houseName)} right now.</div></div>`
     : approvalsPendingDetailsHtml(queue, houseName);
   const sel = (id, cur, opts) => `<select id="${id}" onchange="setApprovalHistFilter('${id==='ap-status'?'status':'range'}', this.value)">${opts.map(([v,l])=>`<option value="${v}" ${cur===v?"selected":""}>${l}</option>`).join("")}</select>`;
   const filtersActive = !!q || f.status!=="decided" || f.range!=="7d";
@@ -7743,6 +7765,7 @@ function renderApprovalsHistoryForLeadership(){
   <div class="section">
     <div class="section-head">
       <h2>Pending Approvals</h2>
+      ${allMode ? "" : `<button type="button" class="btn small" onclick="leadShowAll()">Show all houses</button>`}
       <span class="hint">Items waiting for a decision are shown first. Items already approved or denied are tucked into the list below, which shows the last ${APPROVAL_RECENT_DAYS} days unless you search or filter.</span>
     </div>
     ${queueBlock}
@@ -9628,6 +9651,7 @@ function renderDashboardStatList(key){
 // resident that happens to exist in both houses) the next time one of those screens renders.
 function setHouse(h){
   state.house = h;
+  state.leadAll = false; // picking one house leaves the Leadership "All houses" view
   state.view = "dashboard";
   state.residentId = null;
   state.dcResidentId = null;
@@ -10229,12 +10253,14 @@ function phoneVisitorsInNow(){
 function phoneResidentResultsHtml(){
   const q = String(state.phoneResQ || "").trim().toLowerCase();
   if(!q) return "";
-  const hits = houseResidents().filter(r=>(r.name || "").toLowerCase().includes(q) || String(r.room || "").toLowerCase() === q)
+  const all = !!state.leadAll;
+  const pool = all ? residents.filter(r=>!r.archived) : houseResidents();
+  const hits = pool.filter(r=>(r.name || "").toLowerCase().includes(q) || String(r.room || "").toLowerCase() === q)
     .sort((a,b)=>a.name.localeCompare(b.name)).slice(0, 12);
-  if(!hits.length) return `<div class="cp-hint" style="padding:6px 2px;">No one at this house matches that. Check the house chips above.</div>`;
-  return hits.map(r=>`<button type="button" class="ph-res" onclick="openResident(${jsId(r.id)})">
+  if(!hits.length) return `<div class="cp-hint" style="padding:6px 2px;">${all ? "No one matches that in any house." : "No one at this house matches that. Check the house chips above."}</div>`;
+  return hits.map(r=>`<button type="button" class="ph-res" onclick="leadOpenResident(${jsId(r.id)})">
       ${residentAvatar(r)}
-      <span><span class="nm">${escFlagText(r.name)}</span><br><span class="rm">Room ${escFlagText(r.room)}</span></span>
+      <span><span class="nm">${escFlagText(r.name)}</span><br><span class="rm">Room ${escFlagText(r.room)}${all ? " · " + escFlagText((houses.find(h=>h.id===r.house)||{}).name || "") : ""}</span></span>
       <span style="margin-left:auto; display:flex; gap:4px; flex-wrap:wrap; justify-content:flex-end;">${residentBadges(r)}</span>
     </button>`).join("");
 }
@@ -10306,7 +10332,129 @@ function leadFoodPhotosHtml(){
     </div>
   </div>`;
 }
+// ---- Leadership "All houses" home ----
+function withHouse(id, fn){ const prev = state.house; state.house = id; try{ return fn(); } finally { state.house = prev; } }
+function leadShowAll(){ state.leadAll = true; state.phoneFullDashboard = false; state.phoneResQ = ""; state.view = "dashboard"; closeSidebar(); render(); }
+function leadGoHouse(id, target, filter){
+  setHouse(id);
+  if(target === "full"){ openFullHouseDashboard(filter); return; }
+  goView(target);
+}
+function leadOpenResident(id){
+  const r = residents.find(x=>x.id===id);
+  if(r && r.house) state.house = r.house;
+  openResident(id);
+}
+function leadAllApprovalsParts(){
+  let total = 0; const groups = [];
+  const co = approvalsQueueParts("company");
+  if(!co.nothing){ total += co.count; groups.push({ name:"Company-wide", html:co.cardsHtml }); }
+  houses.forEach(h=>{
+    const p = withHouse(h.id, ()=>approvalsQueueParts("house"));
+    if(!p.nothing){ total += p.count; groups.push({ name:h.name, html:p.cardsHtml }); }
+  });
+  return { nothing: total === 0, count: total,
+    cardsHtml: groups.map(g=>`<div class="ap-group"><div class="dc-label" style="margin:12px 0 6px;">${esc(g.name)}</div>${g.html}</div>`).join("") };
+}
+function leadHouseStats(h){
+  return withHouse(h.id, ()=>{
+    const list = houseResidents();
+    const away = list.filter(r=>r.flags.away);
+    const overdue = dueNowBuildCands().filter(c=>c.overdue && !c.done).length;
+    const monOn = moduleOnForHouse(h.id, "monitoring");
+    const monitored = monOn ? list.filter(r=>activeMonitors(r.id).length) : [];
+    const visOk = phoneVisitorsInNow() !== null;
+    const visitorsIn = visOk ? visitorCheckin.rows.filter(v=>!v.signed_out_at && v.house_id === h.id).length : null;
+    let incidents = 0;
+    residents.filter(r=>r.house === h.id).forEach(r=>{ (incidentReports[r.id]||[]).forEach(rep=>{ if(rep.status === "pending_leadership_review") incidents++; }); });
+    incidentAcksNeeded(currentUser()).forEach(({residentId})=>{ const r = residents.find(x=>x.id===residentId); if(r && r.house === h.id) incidents++; });
+    const dayData = (foodPhotos[todayIso()]||{})[h.id] || {};
+    const posted = MEAL_CATS.filter(c=>dayData[c] && dayData[c].img).length;
+    return { list, away, overdue, monOn, monitored, visitorsIn, incidents, pending: approvalsQueueParts("house").count, dayData, posted,
+      fall: list.filter(r=>r.flags.fall).length, hospice: list.filter(r=>r.flags.hospice).length };
+  });
+}
+function leadMini(cls, n, label, onclick){
+  return `<button type="button" class="ph-mini ${cls}" onclick="${onclick}"><span class="n">${n}</span><span class="l">${label}</span></button>`;
+}
+function leadHouseCardsHtml(){
+  return houses.map(h=>{
+    const st = leadHouseStats(h), id = jsId(h.id);
+    return `<div class="card ph-hcard">
+      <div class="ph-hcard-head"><b>${esc(h.name)}</b><span class="ph-hcard-sub">${st.list.length} resident${st.list.length===1?"":"s"} · ${st.fall} fall risk · ${st.hospice} hospice</span></div>
+      <div class="ph-ministats">
+        ${leadMini(st.pending ? "attn" : "calm", st.pending, "Approvals", `leadGoHouse(${id},'approvals')`)}
+        ${leadMini(st.overdue ? "attn" : "calm", st.overdue, "Overdue", `leadGoHouse(${id},'full')`)}
+        ${leadMini(st.away.length ? "info" : "calm", st.away.length, "Out", `leadGoHouse(${id},'full','away')`)}
+        ${st.monOn ? leadMini(st.monitored.length ? "attn" : "calm", st.monitored.length, "Monitored", `leadGoHouse(${id},'full','monitored')`) : ""}
+        ${leadMini("info", st.visitorsIn === null ? "–" : st.visitorsIn, "Visitors in", `leadGoHouse(${id},'visitors')`)}
+        ${leadMini(st.incidents ? "attn" : "calm", st.incidents, "Incidents", `leadGoHouse(${id},'incidents')`)}
+      </div>
+      ${st.away.length ? `<div class="ph-hcard-note">Out of building: ${esc(st.away.map(r=>(r.name||"").split(" ")[0]).join(", "))}</div>` : ""}
+    </div>`;
+  }).join("");
+}
+function leadAllFoodHtml(){
+  const date = todayIso();
+  const cards = houses.map(h=>{
+    const st = leadHouseStats(h);
+    const thumbs = MEAL_CATS.map(c=>{
+      const e = st.dayData[c], m = CAT_META[c];
+      return (e && e.img) ? `<span class="ph-thumb"><img src="${e.img}" alt="${m.label}"></span>` : `<span class="ph-thumb empty" title="${m.label} not posted">${m.icon}</span>`;
+    }).join("");
+    const b = st.posted >= MEAL_CATS.length ? badge("good", `${st.posted} of ${MEAL_CATS.length} posted`)
+      : photoDeadlinePassed(date) ? badge("alert", `${st.posted} of ${MEAL_CATS.length} posted`) : badge("neutral", `${st.posted} of ${MEAL_CATS.length} posted`);
+    return `<button type="button" class="card ph-fcard" onclick="goView('foodphotos')" aria-label="${esc(h.name)} food photos, open the photo feed">
+      <div class="ph-hcard-head"><b>${esc(h.name)}</b>${b}</div>
+      <div class="ph-thumbs">${thumbs}</div>
+    </button>`;
+  }).join("");
+  return `<div class="ph-block ph-food"><h3>Food photos today — all houses</h3>
+    <div class="ph-hgrid">${cards}</div>
+    <div class="cp-hint" style="margin-top:8px;">Tap a house to open the Food Photos feed with every picture.</div></div>`;
+}
+function leadChipsHtml(){
+  return `<div class="ph-chips" role="tablist" aria-label="House">
+    <button type="button" class="ph-chip ${state.leadAll?"active":""}" onclick="leadShowAll()">All houses</button>
+    ${houses.map(h=>`<button type="button" class="ph-chip ${(!state.leadAll && h.id===state.house)?"active":""}" onclick="setHouse(${jsId(h.id)})">${escFlagText(h.name)}</button>`).join("")}</div>`;
+}
+function leadShortcutsHtml(){
+  const incidents = pendingIncidentManagerReviewCount();
+  const shortcuts = [
+    ["residents","👥","Residents",0], ["dailycare","✎","Care Log",0], ["visitors","☑","Visitor Check-In",0],
+    ["incidents","⚠","Incident Reports",incidents], ["calendar","▦","Calendar",0], ["directory","☎","Directory",0],
+    ["passedmeds","✚","Passed Medications",0], ["archivedresidents","🗄","Archive",0]
+  ];
+  return `<div class="ph-shortcuts">${shortcuts.map(([id,ic,label,bd])=>`<button type="button" class="ph-short" onclick="goView('${id}')"><span class="ic">${ic}</span>${label}${bd ? `<span class="bd">${bd}</span>` : ""}</button>`).join("")}</div>`;
+}
+function renderLeadershipAllHome(){
+  const me = currentUser();
+  const parts = leadAllApprovalsParts();
+  document.getElementById("content").innerHTML = `
+  <div class="ph-wrap"><div class="ph-hello"><h2>${phoneGreeting()}, ${escFlagText((me.name || "").split(" ")[0])}</h2><div class="sub">All houses · ${TODAY}</div></div>
+  ${leadChipsHtml()}
+
+  ${leadTodayEventsHtml()}
+  ${renderIncidentAckCard()}
+  ${parts.nothing ? `<div class="ph-block ph-appr" style="margin-top:12px;"><div class="card" style="padding:14px 18px;"><div class="cp-hint" style="font-style:italic; margin:0;">Nothing is waiting for your decision at any house.</div></div></div>`
+    : `<div class="ph-block ph-appr" style="margin-top:12px;">${approvalsPendingDetailsHtml(parts, "all houses")}
+    <button type="button" class="btn small ph-fullbtn" style="margin-top:0;" onclick="goView('approvals')">Open Pending Approvals and history</button></div>`}
+
+  <div class="ph-block"><h3>Needs you now — every house</h3><div class="ph-hgrid">${leadHouseCardsHtml()}</div></div>
+
+  ${leadAllFoodHtml()}
+
+  <div class="ph-block">
+    <h3>Find a resident</h3>
+    <input type="search" class="ph-search" id="ph-search" placeholder="Name or room number, any house" value="${escFlagText(state.phoneResQ || "")}" oninput="setPhoneResidentSearch(this.value)" autocomplete="off" autocapitalize="off">
+    <div class="ph-results" id="ph-results">${phoneResidentResultsHtml()}</div>
+  </div>
+
+  <div class="ph-block"><h3>Go to</h3>${leadShortcutsHtml()}
+    <div class="cp-hint" style="margin-top:10px;">Pick a house above to see its full dashboard.</div></div></div>`;
+}
 function renderLeadershipPhoneHome(){
+  if(state.leadAll){ renderLeadershipAllHome(); return; }
   const me = currentUser();
   const house = houses.find(h=>h.id === state.house);
   const list = houseResidents();
@@ -10328,7 +10476,7 @@ function renderLeadershipPhoneHome(){
   ];
   document.getElementById("content").innerHTML = `
   <div class="ph-wrap"><div class="ph-hello"><h2>${phoneGreeting()}, ${escFlagText((me.name || "").split(" ")[0])}</h2><div class="sub">${escFlagText(house ? house.name : "")} · ${TODAY}</div></div>
-  <div class="ph-chips" role="tablist" aria-label="House">${houses.map(h=>`<button type="button" class="ph-chip ${h.id===state.house?"active":""}" onclick="setHouse(${jsId(h.id)})">${escFlagText(h.name)}</button>`).join("")}</div>
+  ${leadChipsHtml()}
 
   ${leadTodayEventsHtml()}
   ${renderIncidentAckCard()}
